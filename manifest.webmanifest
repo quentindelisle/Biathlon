@@ -1,0 +1,17 @@
+{
+  "name": "Biathlon 5 s – N'EPS numérique",
+  "short_name": "Biathlon 5s",
+  "description": "Suivi de performance élèves – CA1 Biathlon course de 5 s / lancer long – By Quentin Delisle & Gwilherm Rocher",
+  "lang": "fr",
+  "start_url": "./index.html",
+  "scope": "./",
+  "display": "standalone",
+  "orientation": "any",
+  "background_color": "#F4F7FC",
+  "theme_color": "#0B2A6B",
+  "icons": [
+    { "src": "icons/icon-192.png", "sizes": "192x192", "type": "image/png" },
+    { "src": "icons/icon-512.png", "sizes": "512x512", "type": "image/png" },
+    { "src": "icons/icon-maskable-512.png", "sizes": "512x512", "type": "image/png", "purpose": "maskable" }
+  ]
+}
