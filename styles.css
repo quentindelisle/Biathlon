@@ -254,3 +254,12 @@ input[type=range]{-webkit-appearance:none;appearance:none;background:transparent
 input[type=range]::-moz-range-track{height:12px;border-radius:999px;background:#DCE2EE;border:2px solid var(--navy)}
 input[type=range]::-moz-range-thumb{width:30px;height:30px;border-radius:50%;background:var(--orange);border:3px solid var(--navy)}
 .dial{width:210px;height:210px}
+
+/* Échelle de couleurs (écart à la cible) */
+.sc.l-vg{background:#0B4F1C;color:#fff} .sc.l-g2{background:#1E8E3E;color:#fff} .sc.l-g{background:#86DC96;color:#0A1633}
+.sc.l-y{background:#FFD84D;color:#0A1633} .sc.l-o1{background:#FFB066;color:#0A1633} .sc.l-o2{background:#F07000;color:#fff} .sc.l-r{background:#D0161B;color:#fff}
+.sc{border:2px solid rgba(10,22,51,.25)}
+.legend{display:flex;flex-wrap:wrap;gap:6px 14px;margin-top:8px;font-size:14px;font-weight:700}
+.legend span{display:inline-flex;align-items:center;gap:6px}
+.legend i{width:22px;height:18px;border-radius:5px;border:2px solid rgba(10,22,51,.3);display:inline-block}
+select[disabled]{opacity:.7}

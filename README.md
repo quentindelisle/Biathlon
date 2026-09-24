@@ -24,3 +24,8 @@ Fonctionne ensuite hors-ligne ; les données restent sur chaque appareil.
 6. Export / Réglages → Export Excel.
 
 Mise à jour : changer `CACHE` dans `sw.js` pour forcer le rechargement sur les tablettes.
+
+## Échange par QR (v3.1)
+- QR « léger » conseillé en début de leçon (cibles déjà calculées) : 1 à 3 QR ; QR « complet » pour l'historique des statistiques.
+- Scanner : cadre orange, 30–40 cm, luminosité de l'écran au maximum. Les QR défilent seuls ; touchez un numéro manquant pour l'afficher.
+- Secours : « Prendre le QR en photo » (appareil photo natif) ou « Partager en fichier » (AirDrop / Partage à proximité).

@@ -1,15 +1,15 @@
 /* =====================================================================
    Biathlon 5 s / Lancer long — Suivi de performance élèves
-   N'EPS numérique — CA1 — By Quentin Delisle & Gwilherm Rocher
+   N'EPS numérique — CA1 — Quentin Delisle et Gwilherm Rocher
    PWA hors-ligne : données stockées sur l'appareil (localStorage),
    échanges entre tablettes par QR codes.
    Mesure : 1 point par plot atteint.
      Sprint 5 s : plot 1 = 15 km/h, plot 2 = 16 km/h … plot 11 = 25 km/h
-     Lancer long : plot 1 à 4 m, puis un plot tous les 2 m (8 plots, jusqu'à 12)
+     Lancer long : plot 1 à 4 m, puis un plot tous les 2 m (8 plots, jusqu'à 11 = 24 m)
    ===================================================================== */
 'use strict';
 
-const APP_VERSION = '2.0.0';
+const APP_VERSION = '3.0.0';
 const STORE_KEY = 'neps_biathlon5s_v2';
 const QR_CHUNK = 750;           // caractères par QR (lisible par une caméra de tablette)
 
@@ -19,11 +19,12 @@ const ACT = {
        man:'manual', adj:'adjust', proj:'cibleS', maxPlots:11, minPlots:3, word:'course',
        unit: k => `${14+k} km/h`, detail: k => `${fmt((14+k)/3.6*5)} m en 5 s` },
   b: { id:'b', key:'b', ico:'🏀', label:'Lancer long', att:'nbTirs', base:'baseTirs', plots:'plotsB', ecart:'ecartB',
-       man:'manualB', adj:'adjustB', proj:'cibleB', maxPlots:12, minPlots:3, word:'lancer',
+       man:'manualB', adj:'adjustB', proj:'cibleB', maxPlots:11, minPlots:3, word:'lancer',
        unit: k => `${2*k+2} m`, detail: k => `plot à ${2*k+2} m` },
 };
-const plotTxt = (a, k) => k == null ? '—' : k === 0 ? 'aucun plot' : `Plot ${k} · ${ACT[a].unit(k)}`;
-const plotShort = (a, k) => k == null ? '—' : `P${k} · ${ACT[a].unit(k)}`;
+const pts = k => `${k} pt${k>1?'s':''}`;
+const plotTxt = (a, k) => k == null ? '—' : k === 0 ? 'aucun plot' : `plot ${k} (${ACT[a].unit(k)})`;
+const plotShort = (a, k) => k == null ? '—' : `${pts(k)} · ${ACT[a].unit(k)}`;
 
 const COLORS = [
   {k:'rouge', n:'Rouge', c:'#E3262B'}, {k:'bleu', n:'Bleu', c:'#1E5FD8'},
@@ -48,6 +49,7 @@ let S;
 try { S = JSON.parse(localStorage.getItem(STORE_KEY)) || defaultState(); } catch(e){ S = defaultState(); }
 if (!S.deviceId) S.deviceId = rnd(4);
 S.settings = { ...DEFAULT_SETTINGS, ...(S.settings||{}) };
+S.settings.plotsB = Math.min(11, S.settings.plotsB); S.settings.plotsS = Math.min(11, S.settings.plotsS);
 ['students','lessons','results','projects'].forEach(k => { if(!S[k]) S[k] = (k==='students'?[]:{}); });
 
 function save(){
@@ -136,8 +138,9 @@ function lesson(n){
   n = +n;
   if (!S.lessons[n]) S.lessons[n] = {};
   const L = S.lessons[n];
-  if (L.title == null) L.title = n===1 ? 'Test : sprint 5 s et lancer long' : '';
-  if (L.source == null) L.source = 'test';
+  if (L.title == null) L.title = '';
+  if (L.source == null || L.source === 'test') L.source = (L.source === 'test' && n === 2) ? 1 : 'prev';   // reprise des anciennes données
+  if (L.calc == null) L.calc = 'max';
   ['manual','adjust','manualB','adjustB','att'].forEach(k => { L[k] = L[k] || {}; });
   return L;
 }
@@ -145,7 +148,7 @@ const curLesson = () => Math.min(S.settings.current || 1, S.settings.nbLessons);
 const isLast = n => +n === +S.settings.nbLessons && n > 1;
 const attOf = (n, sid) => lesson(n).att[sid] || null;           // 'abs' | 'inap' | null
 const present = (n, sid) => !attOf(n, sid);
-const maxPlots = a => +S.settings[ACT[a].plots];
+const maxPlots = a => Math.min(ACT[a].maxPlots, +S.settings[ACT[a].plots]);
 /* Nombre de tentatives : base commune à toutes les leçons, ajustable leçon par leçon */
 const nbAtt = (n, a) => { const v = lesson(n)[ACT[a].att]; return v == null ? +S.settings[ACT[a].base] : +v; };
 const isOverride = (n, a) => lesson(n)[ACT[a].att] != null;
@@ -162,38 +165,39 @@ const perf = (n, sid, a) => res(n, sid)?.[ACT[a].key] || [];
 const vals = arr => (arr||[]).filter(v => v != null && !isNaN(v));
 const avg = a => a.length ? a.reduce((x,y)=>x+y,0)/a.length : null;
 const clampT = (a, v) => v == null ? null : Math.max(1, Math.min(maxPlots(a), Math.round(v)));
+const hasSource = n => typeof lesson(n).source === 'number' && lesson(n).source < n;
 
-/* Cible issue du test (leçon 1) : meilleur plot atteint, ou valeur fixée par l'enseignant */
-function testTarget(sid, a){
-  const L1 = lesson(1);
-  if (L1[ACT[a].man][sid] != null) return +L1[ACT[a].man][sid];
-  const v = vals(perf(1, sid, a));
-  return v.length ? clampT(a, Math.max(...v)) : null;
+/* Cible calculée à partir des résultats d'une leçon (meilleur plot ou moyenne arrondie) */
+function targetFromResults(x, sid, a, calc){
+  const v = vals(perf(x, sid, a));
+  if (!v.length) return null;
+  return clampT(a, calc === 'avg' ? avg(v) : Math.max(...v));
 }
-/* Cible de base d'une leçon (sans facile / difficile) */
+/* Cible de base (sans facile / difficile). Une cible reste la norme jusqu'au prochain changement :
+   modification à la main, ou « utiliser les résultats de la leçon X ». */
 function baseTarget(n, sid, a, depth=0){
   n = +n;
-  if (n <= 1 || depth > 30) return testTarget(sid, a);
+  if (n < 1 || depth > 40) return null;
   const L = lesson(n);
   if (L[ACT[a].man][sid] != null) return +L[ACT[a].man][sid];
   if (isLast(n) && S.projects[sid] && S.projects[sid][ACT[a].proj] != null) return +S.projects[sid][ACT[a].proj];
-  const src = L.source;
-  if (src === 'test' || !src || +src >= n || +src < 2) return testTarget(sid, a);
-  return baseTarget(+src, sid, a, depth+1);
+  if (hasSource(n)) { const t = targetFromResults(L.source, sid, a, L.calc); if (t != null) return t; }
+  return baseTarget(n - 1, sid, a, depth + 1);
 }
 function targetInfo(n, sid, a){
   n = +n;
-  if (n === 1) { const t = testTarget(sid, a); return { value:t, base:t, adj:0, test:true, manual: lesson(1)[ACT[a].man][sid] != null }; }
   const L = lesson(n);
   const base = baseTarget(n, sid, a);
   const sign = +(L[ACT[a].adj][sid] || 0);
   const adj = sign * +S.settings[ACT[a].ecart];
   const value = base == null ? null : clampT(a, base + adj);
-  const prev = n === 2 ? testTarget(sid, a) : targetInfo(n-1, sid, a).value;
-  const fromProject = isLast(n) && L[ACT[a].man][sid] == null && S.projects[sid]?.[ACT[a].proj] != null;
-  const src = L[ACT[a].man][sid] != null ? 'modifiée' : fromProject ? 'projet' : (L.source === 'test' || !L.source ? 'test L1' : 'leçon ' + L.source);
+  const prev = n > 1 ? targetInfo(n-1, sid, a).value : null;
+  const manual = L[ACT[a].man][sid] != null;
+  const fromProject = isLast(n) && !manual && S.projects[sid]?.[ACT[a].proj] != null;
+  const fromRes = !manual && !fromProject && hasSource(n) && targetFromResults(L.source, sid, a, L.calc) != null;
+  const src = manual ? 'fixée à la main' : fromProject ? 'projet élève' : fromRes ? `résultats L${L.source}` : base == null ? 'à définir' : `reprise de L${n-1}`;
   return { value, base, adj, sign, prev, changed: prev != null && value != null && prev !== value,
-           manual: L[ACT[a].man][sid] != null, fromProject, src };
+           manual, fromProject, fromRes, src };
 }
 function targetTags(ti, a){
   let h = '';
@@ -207,11 +211,24 @@ function targetTags(ti, a){
 function isComplete(n, sid){
   return vals(perf(n, sid, 's')).length >= nbAtt(n, 's') && vals(perf(n, sid, 'b')).length >= nbAtt(n, 'b');
 }
-/* Couleur d'une performance par rapport à la cible */
+/* Échelle de couleur : écart entre la performance et la cible (en plots) */
+const LEVELS = [
+  { k:'l-vg', min: 2,  bg:'#0B4F1C', fg:'#fff', t:'Bien au-dessus (+2 et plus)' },
+  { k:'l-g2', min: 1,  bg:'#1E8E3E', fg:'#fff', t:'Au-dessus (+1)' },
+  { k:'l-g',  min: 0,  bg:'#86DC96', fg:'#0A1633', t:'Cible atteinte' },
+  { k:'l-y',  min:-1,  bg:'#FFD84D', fg:'#0A1633', t:'Juste en dessous (−1)' },
+  { k:'l-o1', min:-2,  bg:'#FFB066', fg:'#0A1633', t:'En dessous (−2)' },
+  { k:'l-o2', min:-3,  bg:'#F07000', fg:'#fff', t:'Loin en dessous (−3)' },
+  { k:'l-r',  min:-99, bg:'#D0161B', fg:'#fff', t:'Très loin en dessous (−4 et moins)' },
+];
+function level(v, t){ if (v == null || t == null) return null; const d = v - t; return LEVELS.find(l => d >= l.min); }
 function scoreCls(v, t){
   if (v == null) return 's-none';
   if (t == null) return 's-dist';
-  return v >= t ? 's-hi' : v >= t - 1 ? 's-mid' : 's-lo';
+  return level(v, t).k;
+}
+function legend(){
+  return `<div class="legend">${LEVELS.map(l=>`<span><i style="background:${l.bg}"></i>${l.t}</span>`).join('')}</div>`;
 }
 
 /* ---------------------------------------------------------------------
@@ -220,11 +237,11 @@ function scoreCls(v, t){
 function advicesFor(sid, a){
   const out = [], A_ = ACT[a], N = S.settings.nbLessons;
   const done = [];
-  for (let n = 2; n <= N; n++) { const v = vals(perf(n, sid, a)); if (v.length) done.push({ n, v, raw: perf(n, sid, a), t: targetInfo(n, sid, a).value }); }
+  for (let n = 1; n <= N; n++) { const v = vals(perf(n, sid, a)); if (v.length) done.push({ n, v, raw: perf(n, sid, a), t: targetInfo(n, sid, a).value }); }
   const P = A_.ico + ' ';
   if (!done.length) {
-    const t = testTarget(sid, a);
-    if (t != null) out.push({ cls:'info', t:`${P}Ta cible de départ : <b>${plotTxt(a, t)}</b>. À toi de l'atteindre à chaque ${A_.word} !` });
+    const t = targetInfo(curLesson(), sid, a).value;
+    if (t != null) out.push({ cls:'info', t:`${P}Ta cible : <b>${plotTxt(a, t)}</b>, soit ${pts(t)} à marquer à chaque ${A_.word} !` });
     return out;
   }
   const last = done[done.length-1], prev = done[done.length-2], t = last.t, c = last.raw;
@@ -238,20 +255,20 @@ function advicesFor(sid, a){
       : `${P}Tu as atteint ta cible à toutes tes tentatives : peut-être faut-il la revoir à la hausse ?` });
   const m = avg(last.v);
   if (t != null && m != null && last.v.length >= 2 && m <= t - 2)
-    out.push({ cls:'', t:`${P}En moyenne tu atteins le plot ${fmt(m)} pour une cible au plot ${t} : ta cible est peut-être trop difficile aujourd'hui. Tu peux demander une cible facile.` });
+    out.push({ cls:'', t:`${P}En moyenne tu marques ${fmt(m)} points pour une cible de ${pts(t)} : ta cible est peut-être trop difficile aujourd'hui. Tu peux demander une cible facile.` });
   const lastIdx = c.length - 1;
   if (last.v.length >= 3 && c[lastIdx] != null && c[0] != null && c[lastIdx] <= c[0] - 2)
     out.push({ cls:'', t:`${P}Tes performances baissent sur les dernières tentatives : récupère bien entre chaque ${A_.word} et dose ton effort.` });
   if (prev) {
     const d = avg(last.v) - avg(prev.v);
-    if (d >= 1) out.push({ cls:'good', t:`${P}Bravo ! Tu progresses de ${fmt(d)} plot(s) en moyenne entre la leçon ${prev.n} et la leçon ${last.n}.` });
+    if (d >= 1) out.push({ cls:'good', t:`${P}Bravo ! Tu progresses de ${fmt(d)} point(s) en moyenne entre la leçon ${prev.n} et la leçon ${last.n}.` });
   }
   return out;
 }
 function advices(sid){
   const out = [...advicesFor(sid, 's'), ...advicesFor(sid, 'b')];
-  if (!out.length) out.push({ cls: vals(perf(1,sid,'s')).length ? 'good' : 'info',
-    t: vals(perf(1,sid,'s')).length ? 'Continue comme ça : tes performances sont proches de tes cibles.' : 'Pas encore de performances enregistrées.' });
+  const any = vals(perf(1,sid,'s')).length || Object.keys(S.results).some(n => res(n, sid));
+  if (!out.length) out.push({ cls: any ? 'good' : 'info', t: any ? 'Continue comme ça : tes performances sont proches de tes cibles.' : 'Pas encore de performances enregistrées.' });
   return out;
 }
 
@@ -288,7 +305,7 @@ function viewHome(){
   return `<div class="home">
     <img class="home-logo" src="logo-app.png" alt="N'EPS numérique – CA1 Biathlon">
     <div class="home-lesson">
-      <div class="big">Leçon ${n} / ${S.settings.nbLessons}${n===1?' · TEST':''}</div>
+      <div class="big">Leçon ${n} / ${S.settings.nbLessons}</div>
       <div style="font-size:20px;font-weight:800">${esc(L.title || 'Sans titre')}</div>
       <div class="muted" style="font-weight:700">🏃 ${nbAtt(n,'s')} sprint(s) de 5 s · 🏀 ${nbAtt(n,'b')} lancer(s) long(s) · ${pres}/${S.students.length} élève(s) présent(s)</div>
     </div>
@@ -328,7 +345,7 @@ function viewSaisie(){
   if (!S.students.length) return `<div class="card strong center">Aucun élève. Recevez la leçon du professeur (QR) depuis l'accueil.</div>`;
   const list = sortedStudents().filter(s => present(n, s.id) && passFilter(s));
   const off = S.students.filter(s => !present(n, s.id)).length;
-  return `<div class="card strong"><b style="font-size:20px">Leçon ${n}${n===1?' · TEST':''} ${L.title?'– '+esc(L.title):''}</b>
+  return `<div class="card strong"><b style="font-size:20px">Leçon ${n} ${L.title?'– '+esc(L.title):''}</b>
       <div class="muted" style="font-weight:700">🏃 ${nbAtt(n,'s')} sprint(s) de 5 s · 🏀 ${nbAtt(n,'b')} lancer(s) long(s) · 1 point par plot atteint${off?` · ${off} absent(s)/inapte(s) masqué(s)`:''}</div>
       <div class="muted">Touche la tuile de l'élève que tu observes.</div></div>
     ${filterBar()}
@@ -336,8 +353,7 @@ function viewSaisie(){
 }
 function tileTarget(n, sid, a){
   const ti = targetInfo(n, sid, a);
-  if (n === 1) return `<div class="target">${ACT[a].ico} ${ti.value!=null?'Test : '+plotShort(a, ti.value):'Test'}</div>`;
-  return `<div class="target">${ACT[a].ico} 🎯 ${ti.value!=null ? plotShort(a, ti.value) : '—'}${targetTags(ti, a)}</div>`;
+  return `<div class="target">${ACT[a].ico} 🎯 ${ti.value!=null ? plotShort(a, ti.value) : 'cible à définir'}${targetTags(ti, a)}</div>`;
 }
 function saisieTile(n, s){
   const done = isComplete(n, s.id);
@@ -357,8 +373,8 @@ function viewEntry(){
   const i = list.findIndex(x => x.id === sid);
   const prev = list[i-1], next = list[i+1];
   const head = a => { const ti = targetInfo(n, sid, a);
-    return `<div class="tgt-box"><div class="muted" style="font-weight:800">${ACT[a].ico} ${n===1?'TEST ':'CIBLE '}${ACT[a].label.toUpperCase()}</div>
-      <div class="v">${ti.value!=null?'Plot '+ti.value:'—'}</div><div style="font-weight:800">${ti.value!=null?ACT[a].unit(ti.value):''}${n>1?targetTags(ti, a):''}</div></div>`; };
+    return `<div class="tgt-box"><div class="muted" style="font-weight:800">${ACT[a].ico} CIBLE ${ACT[a].label.toUpperCase()}</div>
+      <div class="v">${ti.value!=null?pts(ti.value):'—'}</div><div style="font-weight:800">${ti.value!=null?'plot '+ti.value+' · '+ACT[a].unit(ti.value):'à définir'}${targetTags(ti, a)}</div></div>`; };
   let h = `<div class="entry-head">${band(sid)}<div class="who">${esc(nameOf(sid))}</div><div class="tgt">${head('s')}${head('b')}</div></div>
     <div class="btn-row" style="margin-bottom:12px"><button class="btn" data-action="go" data-view="saisie">← Retour aux tuiles</button>
       <span class="saved" id="saved-flag"></span></div>`;
@@ -366,12 +382,12 @@ function viewEntry(){
     const A_ = ACT[a], nb = nbAtt(n, a), p = perf(n, sid, a), t = targetInfo(n, sid, a).value, mx = maxPlots(a);
     if (!nb) return;
     h += `<h2 style="margin-top:14px">${A_.ico} ${A_.label} · ${nb} ${A_.word}${nb>1?'s':''}</h2>
-      <p class="muted" style="margin-top:-6px;font-weight:700">Tourne la molette (ou touche un chiffre) : dernier plot atteint, de 0 à ${mx}
-      (${a==='s' ? `plot 1 = 15 km/h … plot ${mx} = ${14+mx} km/h` : `plot 1 à 4 m … plot ${mx} à ${2*mx+2} m`}).${t!=null && n>1?` <b style="color:var(--orange)">Cible : plot ${t}</b>`:''}</p>
+      <p class="muted" style="margin-top:-6px;font-weight:700">Tourne la molette (ou touche un chiffre) : dernier plot atteint = points marqués, de 0 à ${mx}
+      (${a==='s' ? `plot 1 = 15 km/h … plot ${mx} = ${14+mx} km/h` : `plot 1 à 4 m … plot ${mx} à ${2*mx+2} m`}).${t!=null?` <b style="color:var(--orange)">Cible : ${pts(t)} (plot ${t})</b>`:''}</p>
       <div class="dials">`;
     for (let k = 0; k < nb; k++) {
       h += `<div class="dial-card"><h3>${A_.word[0].toUpperCase()+A_.word.slice(1)} ${k+1}</h3>
-        <svg class="dial" viewBox="0 0 200 200" data-a="${a}" data-k="${k}">${dialInner(p[k], mx, n>1?t:null, a)}</svg>
+        <svg class="dial" viewBox="0 0 200 200" data-a="${a}" data-k="${k}">${dialInner(p[k], mx, t, a)}</svg>
         <button class="btn small ghost" data-action="dialClear" data-a="${a}" data-k="${k}">Effacer</button></div>`;
     }
     h += `</div>`;
@@ -388,7 +404,8 @@ function flagSaved(){ const f=$('#saved-flag'); if (f){ f.textContent='✓ Enreg
 const DIAL_START = -135, DIAL_SPAN = 270, CX = 100, CY = 100, DR = 80;
 function pol(r, a){ const t = a*Math.PI/180; return [CX + r*Math.sin(t), CY - r*Math.cos(t)]; }
 function arc(r, a0, a1){ const [x0,y0]=pol(r,a0),[x1,y1]=pol(r,a1); return `M${x0.toFixed(1)} ${y0.toFixed(1)} A${r} ${r} 0 ${a1-a0>180?1:0} 1 ${x1.toFixed(1)} ${y1.toFixed(1)}`; }
-function dialColor(v, t){ return v==null ? '#9AA3B5' : t==null ? '#0B2A6B' : v>=t ? '#12813A' : v>=t-1 ? '#F07000' : '#D0161B'; }
+function dialColor(v, t){ return v==null ? '#9AA3B5' : t==null ? '#0B2A6B' : level(v, t).bg; }
+function dialText(v, t){ return v==null || t==null ? '#fff' : level(v, t).fg; }
 function dialInner(v, max, t, a){
   const col = dialColor(v, t), step = DIAL_SPAN / max;
   const rr = max > 9 ? 12.5 : 15, ro = max > 9 ? 16 : 19, fs = max > 9 ? 14 : 17;
@@ -398,18 +415,19 @@ function dialInner(v, max, t, a){
     const ang = DIAL_START + i*step, [x,y] = pol(DR, ang), on = v === i, isT = t === i;
     if (isT) s += `<circle cx="${x.toFixed(1)}" cy="${y.toFixed(1)}" r="${ro+4}" fill="none" stroke="#F07000" stroke-width="4" stroke-dasharray="4 3"/>`;
     s += `<circle cx="${x.toFixed(1)}" cy="${y.toFixed(1)}" r="${on?ro:rr}" fill="${on?col:'#fff'}" stroke="${on?'#0A1633':'#0B2A6B'}" stroke-width="2.5"/>
-      <text x="${x.toFixed(1)}" y="${(y+(on?6.5:5)).toFixed(1)}" text-anchor="middle" font-size="${on?fs+3:fs}" fill="${on?'#fff':'#0B2A6B'}">${i}</text>`;
+      <text x="${x.toFixed(1)}" y="${(y+(on?6.5:5)).toFixed(1)}" text-anchor="middle" font-size="${on?fs+3:fs}" fill="${on?dialText(v, t):'#0B2A6B'}">${i}</text>`;
   }
-  s += `<text x="100" y="104" text-anchor="middle" font-size="42" fill="${col}">${v==null?'–':v}</text>
-        <text x="100" y="128" text-anchor="middle" font-size="15" fill="#5B6478">${v==null?'plot':v===0?'aucun plot':esc(ACT[a].unit(v))}</text>
-        ${t!=null?`<text x="100" y="192" text-anchor="middle" font-size="14" fill="#F07000">🎯 cible ${t}</text>`:''}`;
+  s += `<circle cx="100" cy="92" r="30" fill="${v==null?'#fff':col}" stroke="${v==null?'#DCE2EE':'#0A1633'}" stroke-width="2.5"/>
+        <text x="100" y="106" text-anchor="middle" font-size="38" fill="${v==null?'#9AA3B5':dialText(v, t)}">${v==null?'–':v}</text>
+        <text x="100" y="140" text-anchor="middle" font-size="15" fill="#5B6478">${v==null?'plot':v===0?'aucun plot':esc(ACT[a].unit(v))}</text>
+        ${t!=null?`<text x="100" y="192" text-anchor="middle" font-size="14" fill="#F07000">🎯 cible ${pts(t)}</text>`:''}`;
   return s;
 }
 function bindEntry(){
   const n = curLesson(), sid = UI.sid;
   document.querySelectorAll('svg.dial').forEach(svg => {
     const k = +svg.dataset.k, a = svg.dataset.a, key = ACT[a].key, max = maxPlots(a);
-    const t = n > 1 ? targetInfo(n, sid, a).value : null, step = DIAL_SPAN / max;
+    const t = targetInfo(n, sid, a).value, step = DIAL_SPAN / max;
     let dragging = false, cur = res(n, sid)?.[key]?.[k] ?? null;
     const valFromEvent = e => {
       const b = svg.getBoundingClientRect();
@@ -456,19 +474,15 @@ function statsColumn(sid, a){
     const status = at === 'abs' ? '<span class="tag abs">Absent</span>' : at === 'inap' ? '<span class="tag inapte">Inapte</span>' : '';
     const title = L.title ? `<div class="ls-title">${esc(L.title)}</div>` : '';
     const nb = Math.max(nbAtt(n, a), p.length);
-    const scores = `<div class="scores">${Array.from({length:nb},(_,k)=>p[k]).map(x=>`<span class="sc ${n===1?(x==null?'s-none':'s-dist'):scoreCls(x, ti.value)}">${x==null?'—':'P'+x}</span>`).join('')}
+    const scores = `<div class="scores">${Array.from({length:nb},(_,k)=>p[k]).map(x=>`<span class="sc ${scoreCls(x, ti.value)}">${x==null?'—':x}</span>`).join('')}
       ${m!=null?`<span style="font-weight:900;align-self:center">moy. ${fmt(m)}</span>`:''}</div>`;
-    if (n === 1) {
-      html += `<div class="lesson-stat"><div class="ls-head"><b>Leçon 1 · Test</b><span>Cible obtenue : <b style="color:var(--blue)">${plotShort(a, ti.value)}</b>${ti.manual?' <span class="tag mod">Modifiée</span>':''} ${status}</span></div>${title}${scores}</div>`;
-    } else {
-      bars.push({ n, v: m, lbl: fmt(m), t: ti.value });
-      const chg = ti.changed ? ` <span class="tag mod">Cible changée (avant P${ti.prev})</span>` : '';
-      html += `<div class="lesson-stat"><div class="ls-head"><b>Leçon ${n}${isLast(n)?' (dernière)':''}</b>
-        <span>🎯 <b style="color:var(--blue)">${plotShort(a, ti.value)}</b>${targetTags(ti, a)}${chg} ${status}</span></div>${title}${scores}</div>`;
-    }
+    bars.push({ n, v: m, lbl: fmt(m), t: ti.value });
+    const chg = ti.changed ? ` <span class="tag mod">Cible changée (avant ${pts(ti.prev)})</span>` : '';
+    html += `<div class="lesson-stat"><div class="ls-head"><b>Leçon ${n}${isLast(n)?' (dernière)':''}</b>
+      <span>🎯 <b style="color:var(--blue)">${ti.value!=null?plotShort(a, ti.value):'—'}</b>${targetTags(ti, a)}${chg} ${status}</span></div>${title}${scores}</div>`;
   }
   return `<div class="card strong"><h2>${A_.ico} ${A_.label}</h2>
-    ${bars.some(b=>b.v!=null) ? `<div class="muted" style="font-weight:700">Plot moyen atteint par leçon <span style="color:var(--orange)">(— cible)</span></div>${barChart(bars, mx, a==='b'?'green':'')}` : ''}
+    ${bars.some(b=>b.v!=null) ? `<div class="muted" style="font-weight:700">Points moyens par leçon <span style="color:var(--orange)">(- - cible)</span></div>${barChart(bars, mx, a==='b'?'green':'')}` : ''}
     ${html}</div>`;
 }
 function viewStatsDetail(){
@@ -477,9 +491,9 @@ function viewStatsDetail(){
   const P = S.projects[sid] || {};
   const projRow = a => {
     const A_ = ACT[a], locked = lesson(N)[A_.man][sid] != null, lastTi = targetInfo(N, sid, a);
-    const sug = P[A_.proj] ?? (N > 2 ? targetInfo(N-1, sid, a).value : testTarget(sid, a));
-    let list = `<div class="tg-list"><span class="it">L1 test : ${plotShort(a, testTarget(sid, a))}</span>`;
-    for (let n = 2; n < N; n++) { const ti = targetInfo(n, sid, a); list += `<span class="it">L${n} : P${ti.value ?? '—'}${ti.sign<0?' (F)':ti.sign>0?' (D)':''}</span>`; }
+    const sug = P[A_.proj] ?? targetInfo(N-1, sid, a).value;
+    let list = `<div class="tg-list">`;
+    for (let n = 1; n < N; n++) { const ti = targetInfo(n, sid, a); list += `<span class="it">L${n} : ${ti.value!=null?pts(ti.value):'—'}${ti.sign<0?' (F)':ti.sign>0?' (D)':''}</span>`; }
     list += `</div>`;
     return `<h3 style="margin-top:12px">${A_.ico} ${A_.label}</h3>${list}
       ${locked ? `<div class="advice info">L'enseignant a fixé ta cible : <b>${plotTxt(a, lastTi.value)}</b>.</div>` :
@@ -493,12 +507,13 @@ function viewStatsDetail(){
       <div class="tgt-box"><div class="muted" style="font-weight:800">🏀 CIBLE L${cur}</div><div class="v">${plotShort('b', targetInfo(cur, sid, 'b').value)}</div></div></div></div>
     <div class="btn-row" style="margin-bottom:12px"><button class="btn" data-action="go" data-view="stats">← Retour aux tuiles</button></div>
     <div class="card strong"><h2>💡 Conseils</h2>${advices(sid).map(a=>`<div class="advice ${a.cls}">${a.t}</div>`).join('')}</div>
+    <div class="card"><b>Couleurs : écart entre tes points et ta cible</b>${legend()}</div>
     <div class="stats-cols">${statsColumn(sid, 's')}${statsColumn(sid, 'b')}</div>
     <div class="card strong" id="projet"><h2>📝 Mon projet pour la dernière leçon (leçon ${N})</h2>
       <div class="muted" style="font-weight:700">Rappel de toutes mes cibles, puis je choisis mes cibles pour la dernière leçon.</div>
       ${projRow('s')}${projRow('b')}
       <label class="field" style="margin-top:12px">Mon projet (ce que je vais faire pour réussir)
-        <textarea id="proj-text" placeholder="Ex. : je vise le plot 7 en sprint car j'ai atteint le plot 6 à chaque course. Je vais bien m'échauffer…">${esc(P.texte||'')}</textarea></label>
+        <textarea id="proj-text" placeholder="Ex. : je vise 7 points en sprint car j'ai marqué 6 points à chaque course. Je vais bien m'échauffer…">${esc(P.texte||'')}</textarea></label>
       <div class="btn-row" style="margin-top:10px"><button class="btn green" data-action="projSave">💾 Enregistrer mon projet</button>
         ${P.ts?`<span class="muted">Enregistré le ${new Date(P.ts).toLocaleDateString('fr-FR')}</span>`:''}</div>
     </div>`;
@@ -560,18 +575,12 @@ function profLecons(){
   let rows = '';
   for (let n = 1; n <= N; n++) {
     const L = lesson(n);
-    let srcSel = '';
-    if (n >= 2) {
-      srcSel = `<label class="field">Cibles utilisées<select data-field="source" data-n="${n}">
-        <option value="test" ${L.source==='test'?'selected':''}>Cibles du test (leçon 1)</option>
-        ${Array.from({length:n-2},(_,i)=>i+2).map(k=>`<option value="${k}" ${String(L.source)===String(k)?'selected':''}>Reprendre les cibles de la leçon ${k}</option>`).join('')}
-      </select></label>`;
-    }
+    const srcSel = sourceSelect(n, 'Cibles de cette leçon');
     const attF = a => { const ov = isOverride(n, a);
       return rangeField(`${ACT[a].ico} ${a==='s'?'Sprints':'Lancers'} :`, nbAtt(n, a), `data-field="att" data-n="${n}" data-a="${a}"`, 0, 10,
         ov ? ` <button class="btn small ghost" data-action="attReset" data-n="${n}" data-a="${a}">↺ base</button>` : ' <span class="muted">(base)</span>'); };
     rows += `<div class="lesson-row"><div class="lesson-num ${n===cur?'cur':''}">${n}</div><div class="lesson-fields">
-      <label class="field full">Titre / contenu de la leçon${n===1?' (test)':''}${isLast(n)?' — dernière leçon : projet élève':''}
+      <label class="field full">Titre / contenu de la leçon${isLast(n)?' — dernière leçon : projet élève':''}
         <input type="text" data-field="title" data-n="${n}" value="${esc(L.title)}" placeholder="Ex. : Courir à sa cible puis lancer long…"></label>
       ${attF('s')}${attF('b')}
       <div class="full">${srcSel}</div>
@@ -591,44 +600,51 @@ function profLecons(){
     <div class="card strong"><h2>Plots (1 point par plot atteint)</h2>
       <div class="lesson-fields" style="grid-template-columns:1fr 1fr">
         ${rangeField('🏃 Plots sprint :', st.plotsS, 'data-field="set" data-k="plotsS"', 3, 11, ` <span class="muted">15 → ${14+st.plotsS} km/h</span>`)}
-        ${rangeField('🏀 Plots lancer :', st.plotsB, 'data-field="set" data-k="plotsB"', 3, 12, ` <span class="muted">4 → ${2*st.plotsB+2} m</span>`)}
+        ${rangeField('🏀 Plots lancer :', st.plotsB, 'data-field="set" data-k="plotsB"', 3, 11, ` <span class="muted">4 → ${2*st.plotsB+2} m</span>`)}
         ${rangeField('🏃 Écart cible facile / difficile :', st.ecartS, 'data-field="set" data-k="ecartS"', 1, 3, ` plot(s) <span class="muted">≈ ${fmt(st.ecartS*5/3.6)} m</span>`)}
         ${rangeField('🏀 Écart cible facile / difficile :', st.ecartB, 'data-field="set" data-k="ecartB"', 1, 3, ` plot(s) <span class="muted">= ${2*st.ecartB} m</span>`)}
       </div>
       <details style="margin-top:10px"><summary style="font-weight:900;font-size:18px;cursor:pointer">📏 Mise en place des plots (distances)</summary>${plotTable()}</details></div>
     <div class="card"><h2>Leçons</h2>
-      <p class="muted" style="margin-top:-4px">Leçon 1 = test : le meilleur plot atteint devient la cible de l'élève (sprint et lancer). Les molettes vont de 0 au nombre de plots réglé ci-dessus.</p>${rows}</div>`;
+      <p class="muted" style="margin-top:-4px">À chaque leçon on saisit le sprint ET le lancer de chaque élève (molettes de 0 au nombre de plots). Les cibles se règlent dans l'onglet 🎯 Cibles : à la main en leçon 1, puis « utiliser les résultats de la leçon X » quand vous voulez les mettre à jour.</p>${rows}</div>`;
+}
+function sourceSelect(n, label){
+  const L = lesson(n);
+  const count = x => S.students.filter(st => vals(perf(x, st.id, 's')).length || vals(perf(x, st.id, 'b')).length).length;
+  const opts = `<option value="prev" ${!hasSource(n)?'selected':''}>${n===1?'Cibles fixées à la main (ci-dessous)':`Garder les cibles en cours (leçon ${n-1})`}</option>` +
+    Array.from({length:n-1},(_,i)=>i+1).map(x=>`<option value="${x}" ${hasSource(n)&&L.source===x?'selected':''}>Utiliser les résultats de la leçon ${x} comme cibles (${count(x)} élève(s))</option>`).join('');
+  return `<div class="row"><label class="field grow">${label}<select data-field="source" data-n="${n}" ${n===1?'disabled':''}>${opts}</select></label>
+    ${hasSource(n)?`<label class="field">Calcul<select data-field="calc" data-n="${n}">
+      <option value="max" ${L.calc!=='avg'?'selected':''}>Meilleur plot atteint</option>
+      <option value="avg" ${L.calc==='avg'?'selected':''}>Moyenne arrondie</option></select></label>`:''}</div>`;
 }
 function profCibles(){
-  const n = curLesson(), L = lesson(n);
+  const n = curLesson();
   const list = sortedStudents();
   const block = (sid, a) => {
     const ti = targetInfo(n, sid, a), A_ = ACT[a];
-    if (n === 1) {
-      const r = vals(perf(1, sid, a));
-      return `<div class="tg-act"><div class="tg-h">${A_.ico} ${A_.label}</div>
-        <div class="tv">${ti.value!=null?plotShort(a, ti.value):'—'} ${ti.manual?'<span class="tag mod">Modifiée</span>':''}</div>
-        <div class="muted" style="font-size:14px;font-weight:700">Mesures : ${r.length?r.map(x=>'P'+x).join(' · '):'aucune'}</div>
-        <div class="btn-row" style="margin-top:6px"><button class="btn small" data-action="manualTarget" data-sid="${sid}" data-a="${a}">✎ Modifier</button>
-        ${ti.manual?`<button class="btn small ghost" data-action="resetTarget" data-sid="${sid}" data-a="${a}">Réinit.</button>`:''}</div></div>`;
-    }
     return `<div class="tg-act"><div class="tg-h">${A_.ico} ${A_.label}</div>
-      <div class="tv">${ti.value!=null?plotShort(a, ti.value):'—'}</div>
-      <div class="muted" style="font-size:14px;font-weight:700">Base P${ti.base ?? '—'} (${ti.src})${ti.changed?` · avant P${ti.prev}`:''}</div>
+      <div class="row" style="gap:8px"><div class="stepper"><button data-action="tgStep" data-sid="${sid}" data-a="${a}" data-d="-1">−</button>
+        <span class="val" style="min-width:74px">${ti.base!=null?pts(ti.base):'—'}</span>
+        <button data-action="tgStep" data-sid="${sid}" data-a="${a}" data-d="1">+</button></div>
+        ${ti.manual?`<button class="btn small ghost" data-action="resetTarget" data-sid="${sid}" data-a="${a}">↺</button>`:''}</div>
+      <div class="muted" style="font-size:14px;font-weight:700">${ti.base!=null?ACT[a].unit(ti.base)+' · ':''}${ti.src}${ti.changed?` · avant ${pts(ti.prev)}`:''}</div>
       <div class="seg" style="margin:6px 0"><button class="easy ${ti.sign<0?'on':''}" data-action="adjust" data-sid="${sid}" data-a="${a}" data-v="-1">Facile</button>
         <button class="norm ${!ti.sign?'on':''}" data-action="adjust" data-sid="${sid}" data-a="${a}" data-v="0">Normal</button>
         <button class="hard ${ti.sign>0?'on':''}" data-action="adjust" data-sid="${sid}" data-a="${a}" data-v="1">Difficile</button></div>
-      <div class="btn-row"><button class="btn small" data-action="manualTarget" data-sid="${sid}" data-a="${a}">✎ Modifier</button>
-        ${ti.manual?`<button class="btn small ghost" data-action="resetTarget" data-sid="${sid}" data-a="${a}">Réinit.</button>`:''}</div></div>`;
+      ${ti.sign?`<div style="font-weight:900;color:var(--blue)">Cible du jour : ${pts(ti.value)}</div>`:''}</div>`;
   };
-  const head = n === 1
-    ? `<div class="card strong"><h2>Leçon 1 · Test</h2><p class="muted" style="margin-top:-4px">La cible de chaque élève = son meilleur plot atteint au test (sprint et lancer). Vous pouvez la corriger à la main.</p></div>`
-    : `<div class="card strong"><h2>Cibles · Leçon ${n}${isLast(n)?' (dernière : projet élève)':''}</h2>
-      <label class="field" style="max-width:520px">Cibles de base pour toute la classe<select data-field="source" data-n="${n}">
-        <option value="test" ${L.source==='test'?'selected':''}>Cibles du test (leçon 1)</option>
-        ${Array.from({length:n-2},(_,i)=>i+2).map(k=>`<option value="${k}" ${String(L.source)===String(k)?'selected':''}>Cibles de la leçon ${k}</option>`).join('')}</select></label>
-      <p class="muted" style="font-weight:700">Par élève et par épreuve : <b style="color:var(--green)">Facile</b> (🏃 −${S.settings.ecartS} plot(s), 🏀 −${S.settings.ecartB}) / Normal / <b style="color:var(--red)">Difficile</b> (+), ou cible modifiée à la main.${isLast(n)?' À la dernière leçon, les cibles choisies par l\'élève dans son projet sont utilisées.':''}</p></div>`;
-  return head + `<div class="tiles">${list.map(s => { const at = attOf(n, s.id);
+  const bulk = a => { const v = UI['bulk'+a] ?? Math.ceil(maxPlots(a)/2);
+    return `<div class="row" style="gap:8px"><b>${ACT[a].ico} ${ACT[a].label}</b>
+      <div class="stepper"><button data-action="bulkStep" data-a="${a}" data-d="-1">−</button><span class="val" style="min-width:150px">${plotShort(a, v)}</span><button data-action="bulkStep" data-a="${a}" data-d="1">+</button></div>
+      <button class="btn small" data-action="bulkApply" data-a="${a}">Appliquer à tous</button></div>`; };
+  return `<div class="card strong"><h2>🎯 Cibles · Leçon ${n}${isLast(n)?' (dernière : projet élève)':''}</h2>
+      ${sourceSelect(n, 'Cibles de la classe')}
+      <p class="muted" style="font-weight:700">Une cible (choisie ici, ou modifiée à la main avec − / +) reste la norme pour les leçons suivantes jusqu'au prochain changement.
+      La cible = nombre de points à marquer à chaque tentative (1 point par plot atteint).
+      Facile / Difficile ne vaut que pour le jour même (🏃 ±${S.settings.ecartS} pt, 🏀 ±${S.settings.ecartB} pt).${isLast(n)?' À la dernière leçon, les cibles choisies par l\'élève dans son projet sont utilisées.':''}</p>
+      <details><summary style="font-weight:900;cursor:pointer">Même cible pour toute la classe…</summary><div style="display:grid;gap:10px;margin-top:10px">${bulk('s')}${bulk('b')}</div></details></div>
+    <div class="tiles">${list.map(s => { const at = attOf(n, s.id);
     return `<div class="att-tile tg-tile">${band(s.id)}<div class="name">${esc(nameOf(s.id))} ${at==='abs'?'<span class="tag abs">Abs.</span>':at==='inap'?'<span class="tag inapte">Inapte</span>':''}</div>
       ${block(s.id, 's')}${block(s.id, 'b')}</div>`; }).join('')}</div>`;
 }
@@ -792,18 +808,17 @@ function exportXlsx(){
   const N = S.settings.nbLessons;
   const num = v => v == null ? '' : v;
   const r2 = v => v == null ? '' : Math.round(v*100)/100;
-  const head = ['Nom', 'Prénom', 'Affiché', 'Chasuble', 'Test sprint (plot)', 'Test sprint (km/h)', 'Test lancer (plot)', 'Test lancer (m)'];
-  for (let n = 2; n <= N; n++) head.push(`L${n} sprint cible`, `L${n} sprint moy.`, `L${n} lancer cible`, `L${n} lancer moy.`);
+  const head = ['Nom', 'Prénom', 'Affiché', 'Chasuble'];
+  for (let n = 1; n <= N; n++) head.push(`L${n} sprint cible`, `L${n} sprint moy.`, `L${n} lancer cible`, `L${n} lancer moy.`);
   head.push('Projet : cible sprint', 'Projet : cible lancer', 'Projet : texte');
   const syn = [head];
   let maxA = 0; for (let n = 1; n <= N; n++) maxA = Math.max(maxA, nbAtt(n,'s'), nbAtt(n,'b'));
-  const det = [['Nom','Prénom','Leçon','Titre','Statut','Épreuve','Cible (plot)','Cible','Ajustement (plots)',
-    ...Array.from({length:maxA},(_,k)=>`Tentative ${k+1}`), 'Moyenne (plot)', 'Meilleur (plot)']];
+  const det = [['Nom','Prénom','Leçon','Titre','Statut','Épreuve','Cible (points)','Cible (plot)','Ajustement (plots)',
+    ...Array.from({length:maxA},(_,k)=>`Tentative ${k+1}`), 'Moyenne (points)', 'Meilleur (points)']];
   sortedStudents().forEach(s => {
     const nom = s.nom || '', pre = s.prenom || s.disp || '';
-    const ts = testTarget(s.id,'s'), tb = testTarget(s.id,'b');
-    const row = [nom, pre, nameOf(s.id), colorOf(s.g)?.n || '', num(ts), ts!=null?14+ts:'', num(tb), tb!=null?2*tb+2:''];
-    for (let n = 2; n <= N; n++) {
+    const row = [nom, pre, nameOf(s.id), colorOf(s.g)?.n || ''];
+    for (let n = 1; n <= N; n++) {
       const at = attOf(n, s.id);
       ['s','b'].forEach(a => { const v = vals(perf(n, s.id, a));
         row.push(num(targetInfo(n, s.id, a).value), at==='abs' ? 'ABS' : at==='inap' ? 'INAPTE' : (v.length ? r2(avg(v)) : '')); });
@@ -816,7 +831,7 @@ function exportXlsx(){
       ['s','b'].forEach(a => {
         const ti = targetInfo(n, s.id, a), p = perf(n, s.id, a), v = vals(p);
         det.push([nom, pre, n, lesson(n).title, at==='abs'?'Absent':at==='inap'?'Inapte':'Présent', ACT[a].label,
-          num(ti.value), ti.value!=null ? ACT[a].unit(ti.value) : '', n===1 ? '' : (ti.adj || 0),
+          num(ti.value), ti.value!=null ? ACT[a].unit(ti.value) : '', (ti.adj || 0),
           ...Array.from({length:maxA},(_,k)=> num(p[k])), v.length ? r2(avg(v)) : '', v.length ? Math.max(...v) : '']);
       });
     }
@@ -826,7 +841,7 @@ function exportXlsx(){
   const w2 = XLSX.utils.aoa_to_sheet(det); w2['!cols'] = det[0].map((_,i)=>({wch: i===3?30:12}));
   XLSX.utils.book_append_sheet(wb, w1, 'Synthèse');
   XLSX.utils.book_append_sheet(wb, w2, 'Détail par leçon');
-  const lessons = []; for (let n = 1; n <= N; n++) lessons.push([n, lesson(n).title, nbAtt(n,'s'), nbAtt(n,'b'), n===1?'Test':(lesson(n).source==='test'?'Test L1':'Leçon '+lesson(n).source)]);
+  const lessons = []; for (let n = 1; n <= N; n++) lessons.push([n, lesson(n).title, nbAtt(n,'s'), nbAtt(n,'b'), hasSource(n) ? `Résultats L${lesson(n).source} (${lesson(n).calc==='avg'?'moyenne':'meilleur'})` : (n===1?'À la main':'Reprise leçon précédente')]);
   XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet([['Leçon','Titre','Sprints','Lancers','Cibles de base'], ...lessons]), 'Leçons');
   const plots = [['Plot','Sprint : vitesse (km/h)','Sprint : distance en 5 s (m)','Lancer : distance (m)']];
   for (let k = 1; k <= Math.max(maxPlots('s'), maxPlots('b')); k++)
@@ -1088,10 +1103,12 @@ const A = {
 
   // prof : cibles
   adjust: d => { const o = lesson(curLesson())[ACT[d.a].adj]; if (+d.v) o[d.sid] = +d.v; else delete o[d.sid]; save(); render(); },
-  manualTarget: async d => { const n = curLesson(), a = d.a, L = lesson(n);
-    const cur = n === 1 ? testTarget(d.sid, a) : baseTarget(n, d.sid, a);
-    const v = await numberBox(`${ACT[a].ico} ${n===1?'Cible test':'Cible de base'} de ${nameOf(d.sid)} (1 à ${maxPlots(a)})`, cur ?? '', { step:1, min:1, max:maxPlots(a), unit:'plot' });
-    if (v != null) { L[ACT[a].man][d.sid] = Math.round(v); save(); render(); } },
+  tgStep: d => { const n = curLesson(), a = d.a, L = lesson(n); const b = baseTarget(n, d.sid, a);
+    L[ACT[a].man][d.sid] = clampT(a, b == null ? Math.ceil(maxPlots(a)/2) : b + (+d.d)); save(); render(); },
+  bulkStep: d => { const a = d.a; UI['bulk'+a] = clampT(a, (UI['bulk'+a] ?? Math.ceil(maxPlots(a)/2)) + (+d.d)); render(); document.querySelector('.card details')?.setAttribute('open',''); },
+  bulkApply: async d => { const a = d.a, v = UI['bulk'+a] ?? Math.ceil(maxPlots(a)/2), n = curLesson();
+    if (!(await confirmBox('Même cible pour tous ?', `${ACT[a].label} : ${plotShort(a, v)} pour tous les élèves à partir de la leçon ${n}.`, 'Appliquer'))) return;
+    S.students.forEach(st => { lesson(n)[ACT[a].man][st.id] = v; }); save(); render(); toast('✓ Cibles appliquées'); },
   resetTarget: d => { delete lesson(curLesson())[ACT[d.a].man][d.sid]; save(); render(); },
 
   // prof : groupes
@@ -1140,7 +1157,8 @@ document.addEventListener('change', e => {
   if (f === 'att') { const L = lesson(t.dataset.n), a = t.dataset.a, v = +t.value;
     if (v === +S.settings[ACT[a].base]) delete L[ACT[a].att]; else L[ACT[a].att] = v; save(); render(); }
   if (f === 'set') { S.settings[t.dataset.k] = +t.value; save(); render(); }
-  if (f === 'source') { lesson(t.dataset.n).source = t.value === 'test' ? 'test' : +t.value; save(); render(); }
+  if (f === 'source') { lesson(t.dataset.n).source = t.value === 'prev' ? 'prev' : +t.value; save(); render(); toast('✓ Cibles mises à jour'); }
+  if (f === 'calc') { lesson(t.dataset.n).calc = t.value; save(); render(); }
 });
 
 document.addEventListener('input', e => {
