@@ -1,25 +1,25 @@
 /* =====================================================================
-   Biathlon 5 s / Lancer long — Suivi de performance élèves
+   Biathlon 5 s / Basket — Suivi de performance élèves
    N'EPS numérique — CA1 — Quentin Delisle et Gwilherm Rocher
    PWA hors-ligne : données stockées sur l'appareil (localStorage),
    échanges entre tablettes par QR codes.
    Mesure : 1 point par plot atteint.
      Sprint 5 s : plot 1 = 15 km/h, plot 2 = 16 km/h … plot 11 = 25 km/h
-     Lancer long : plot 1 à 4 m, puis un plot tous les 2 m (8 plots, jusqu'à 11 = 24 m)
+     Basket (tir long) : plot 1 à 4 m, puis un plot tous les 2 m (1 à 20 plots)
    ===================================================================== */
 'use strict';
 
-const APP_VERSION = '3.0.0';
+const APP_VERSION = '3.2.0';
 const STORE_KEY = 'neps_biathlon5s_v2';
-const QR_CHUNK = 750;           // caractères par QR (lisible par une caméra de tablette)
+const QR_CHUNK = 440;           // caractères base45 par QR (QR version 11 max : facile à lire par une caméra)
 
 /* Les deux épreuves du biathlon */
 const ACT = {
   s: { id:'s', key:'c', ico:'🏃', label:'Sprint 5 s', att:'nbCourses', base:'baseCourses', plots:'plotsS', ecart:'ecartS',
-       man:'manual', adj:'adjust', proj:'cibleS', maxPlots:11, minPlots:3, word:'course',
+       man:'manual', adj:'adjust', proj:'cibleS', maxPlots:20, minPlots:1, word:'course',
        unit: k => `${14+k} km/h`, detail: k => `${fmt((14+k)/3.6*5)} m en 5 s` },
-  b: { id:'b', key:'b', ico:'🏀', label:'Lancer long', att:'nbTirs', base:'baseTirs', plots:'plotsB', ecart:'ecartB',
-       man:'manualB', adj:'adjustB', proj:'cibleB', maxPlots:11, minPlots:3, word:'lancer',
+  b: { id:'b', key:'b', ico:'🏀', label:'Basket', att:'nbTirs', base:'baseTirs', plots:'plotsB', ecart:'ecartB',
+       man:'manualB', adj:'adjustB', proj:'cibleB', maxPlots:20, minPlots:1, word:'tir',
        unit: k => `${2*k+2} m`, detail: k => `plot à ${2*k+2} m` },
 };
 const pts = k => `${k} pt${k>1?'s':''}`;
@@ -49,7 +49,7 @@ let S;
 try { S = JSON.parse(localStorage.getItem(STORE_KEY)) || defaultState(); } catch(e){ S = defaultState(); }
 if (!S.deviceId) S.deviceId = rnd(4);
 S.settings = { ...DEFAULT_SETTINGS, ...(S.settings||{}) };
-S.settings.plotsB = Math.min(11, S.settings.plotsB); S.settings.plotsS = Math.min(11, S.settings.plotsS);
+S.settings.plotsB = Math.min(20, S.settings.plotsB); S.settings.plotsS = Math.min(20, S.settings.plotsS);
 ['students','lessons','results','projects'].forEach(k => { if(!S[k]) S[k] = (k==='students'?[]:{}); });
 
 function save(){
@@ -181,6 +181,8 @@ function baseTarget(n, sid, a, depth=0){
   const L = lesson(n);
   if (L[ACT[a].man][sid] != null) return +L[ACT[a].man][sid];
   if (isLast(n) && S.projects[sid] && S.projects[sid][ACT[a].proj] != null) return +S.projects[sid][ACT[a].proj];
+  const fx = L[a === 's' ? 'fixedS' : 'fixedB'];
+  if (fx && fx[sid] != null) return +fx[sid];            // cibles reçues du professeur (QR léger)
   if (hasSource(n)) { const t = targetFromResults(L.source, sid, a, L.calc); if (t != null) return t; }
   return baseTarget(n - 1, sid, a, depth + 1);
 }
@@ -288,9 +290,9 @@ function render(){
   const homeBtn = `<button class="btn small" data-action="go" data-view="home">⌂ Accueil</button>`;
   if (v === 'home') { setTop('Biathlon 5 s · CA1' + cls, lessonLabel(curLesson())); m.innerHTML = viewHome(); }
   else if (v === 'saisie') { setTop('Saisie · Leçon ' + curLesson(), lesson(curLesson()).title, homeBtn); m.innerHTML = viewSaisie(); }
-  else if (v === 'entry') { setTop('Saisie · ' + nameOf(UI.sid), lessonLabel(curLesson()), `<button class="btn small" data-action="go" data-view="saisie">▦ Tuiles</button>`); m.innerHTML = viewEntry(); bindEntry(); }
+  else if (v === 'entry') { setTop('Saisie · ' + nameOf(UI.sid), lessonLabel(curLesson()), `<button class="btn small" data-action="go" data-view="saisie">▦ Élèves</button>`); m.innerHTML = viewEntry(); bindEntry(); }
   else if (v === 'stats') { setTop('Statistiques', 'Choisis un élève', homeBtn); m.innerHTML = viewStatsTiles(); }
-  else if (v === 'statsDetail') { setTop('Stats · ' + nameOf(UI.sid), S.settings.className, `<button class="btn small" data-action="go" data-view="stats">▦ Tuiles</button>`); m.innerHTML = viewStatsDetail(); }
+  else if (v === 'statsDetail') { setTop('Stats · ' + nameOf(UI.sid), S.settings.className, `<button class="btn small" data-action="go" data-view="stats">▦ Élèves</button>`); m.innerHTML = viewStatsDetail(); }
   else if (v === 'prof') { setTop('Espace enseignant', lessonLabel(curLesson()), homeBtn); m.innerHTML = viewProf(); afterProf(); }
   else if (v === 'send') { setTop('Envoyer mes saisies', 'QR code à scanner par l\'enseignant', homeBtn); m.innerHTML = viewSend(); afterSend(); }
   else if (v === 'receive') { setTop('Recevoir la leçon', 'Scanner le QR code de l\'enseignant', homeBtn); m.innerHTML = viewReceive(); afterReceive(); }
@@ -307,7 +309,7 @@ function viewHome(){
     <div class="home-lesson">
       <div class="big">Leçon ${n} / ${S.settings.nbLessons}</div>
       <div style="font-size:20px;font-weight:800">${esc(L.title || 'Sans titre')}</div>
-      <div class="muted" style="font-weight:700">🏃 ${nbAtt(n,'s')} sprint(s) de 5 s · 🏀 ${nbAtt(n,'b')} lancer(s) long(s) · ${pres}/${S.students.length} élève(s) présent(s)</div>
+      <div class="muted" style="font-weight:700">🏃 ${nbAtt(n,'s')} sprint(s) de 5 s · 🏀 ${nbAtt(n,'b')} tir(s) basket · ${pres}/${S.students.length} élève(s) présent(s)</div>
     </div>
     <div class="home-grid">
       <button class="home-btn saisie" data-action="go" data-view="saisie"><span class="ico">✍️</span>Saisie</button>
@@ -318,8 +320,7 @@ function viewHome(){
       <button class="btn" data-action="go" data-view="receive">📥 Recevoir la leçon (QR)</button>
       <button class="btn orange" data-action="go" data-view="send">📤 Envoyer mes saisies (QR)</button>
     </div>
-    ${S.students.length ? '' : `<div class="card strong center" style="max-width:640px">Aucun élève sur cette tablette.<br>
-      <b>Enseignant</b> : importez la liste dans l'espace enseignant.<br><b>Tablette élève</b> : touchez « Recevoir la leçon » et scannez le QR code du professeur.</div>`}
+    ${S.students.length ? '' : `<div class="card strong center" style="max-width:640px">Aucun élève</div>`}
   </div>`;
 }
 
@@ -346,8 +347,7 @@ function viewSaisie(){
   const list = sortedStudents().filter(s => present(n, s.id) && passFilter(s));
   const off = S.students.filter(s => !present(n, s.id)).length;
   return `<div class="card strong"><b style="font-size:20px">Leçon ${n} ${L.title?'– '+esc(L.title):''}</b>
-      <div class="muted" style="font-weight:700">🏃 ${nbAtt(n,'s')} sprint(s) de 5 s · 🏀 ${nbAtt(n,'b')} lancer(s) long(s) · 1 point par plot atteint${off?` · ${off} absent(s)/inapte(s) masqué(s)`:''}</div>
-      <div class="muted">Touche la tuile de l'élève que tu observes.</div></div>
+      <div class="muted" style="font-weight:700">🏃 ${nbAtt(n,'s')} sprint(s) de 5 s · 🏀 ${nbAtt(n,'b')} tir(s) basket · 1 point par plot atteint${off?` · ${off} absent(s)/inapte(s) masqué(s)`:''}</div></div>
     ${filterBar()}
     <div class="tiles">${list.map(s => saisieTile(n, s)).join('') || '<p>Aucun élève dans ce groupe.</p>'}</div>`;
 }
@@ -360,41 +360,47 @@ function saisieTile(n, s){
   return `<button class="tile ${done?'done':''}" data-action="entry" data-sid="${s.id}">${band(s.id)}
     ${done?'<span class="check">✓</span>':''}
     <span class="name">${esc(nameOf(s.id))}</span>${tileTarget(n, s.id, 's')}${tileTarget(n, s.id, 'b')}
-    <span class="meta">Sprints ${vals(perf(n,s.id,'s')).length}/${nbAtt(n,'s')} · Lancers ${vals(perf(n,s.id,'b')).length}/${nbAtt(n,'b')}</span></button>`;
+    <span class="meta">🏃 ${vals(perf(n,s.id,'s')).length}/${nbAtt(n,'s')} · 🏀 ${vals(perf(n,s.id,'b')).length}/${nbAtt(n,'b')}</span></button>`;
 }
 
 /* ---------------------------------------------------------------------
    Saisie : écran d'un élève
    --------------------------------------------------------------------- */
+function targetCol(n, sid, a){
+  const ti = targetInfo(n, sid, a), v = ti.value;
+  const dist = v == null ? '' : a === 's' ? `${fmt((14+v)/3.6*5)} m` : `${2*v+2} m`;
+  return `<aside class="tcol tcol-${a}"><div class="ico">${ACT[a].ico}</div><div class="lbl">CIBLE</div>
+    <div class="v">${v!=null?v:'—'}</div><div class="lbl">${v!=null?(v>1?'points':'point'):'à définir'}</div>
+    ${v!=null?`<div class="dist">${dist}</div>${a==='s'?`<small>${14+v} km/h</small>`:''}<small>plot ${v}</small>`:''}
+    ${ti.sign<0?'<span class="tag easy">Facile</span>':ti.sign>0?'<span class="tag hard">Difficile</span>':''}</aside>`;
+}
 function viewEntry(){
   const n = curLesson(), sid = UI.sid, s = student(sid);
   if (!s) return '<p>Élève introuvable.</p>';
   const list = sortedStudents().filter(x => present(n, x.id) && passFilter(x));
   const i = list.findIndex(x => x.id === sid);
   const prev = list[i-1], next = list[i+1];
-  const head = a => { const ti = targetInfo(n, sid, a);
-    return `<div class="tgt-box"><div class="muted" style="font-weight:800">${ACT[a].ico} CIBLE ${ACT[a].label.toUpperCase()}</div>
-      <div class="v">${ti.value!=null?pts(ti.value):'—'}</div><div style="font-weight:800">${ti.value!=null?'plot '+ti.value+' · '+ACT[a].unit(ti.value):'à définir'}${targetTags(ti, a)}</div></div>`; };
-  let h = `<div class="entry-head">${band(sid)}<div class="who">${esc(nameOf(sid))}</div><div class="tgt">${head('s')}${head('b')}</div></div>
-    <div class="btn-row" style="margin-bottom:12px"><button class="btn" data-action="go" data-view="saisie">← Retour aux tuiles</button>
-      <span class="saved" id="saved-flag"></span></div>`;
+  let h = `<div class="entry-name">${band(sid)}<div class="who">${esc(nameOf(sid))}</div>
+    <span class="saved" id="saved-flag"></span>
+    <button class="btn" data-action="go" data-view="saisie" style="margin-left:auto">← Retour aux élèves</button></div>`;
   ['s','b'].forEach(a => {
     const A_ = ACT[a], nb = nbAtt(n, a), p = perf(n, sid, a), t = targetInfo(n, sid, a).value, mx = maxPlots(a);
     if (!nb) return;
-    h += `<h2 style="margin-top:14px">${A_.ico} ${A_.label} · ${nb} ${A_.word}${nb>1?'s':''}</h2>
-      <p class="muted" style="margin-top:-6px;font-weight:700">Tourne la molette (ou touche un chiffre) : dernier plot atteint = points marqués, de 0 à ${mx}
-      (${a==='s' ? `plot 1 = 15 km/h … plot ${mx} = ${14+mx} km/h` : `plot 1 à 4 m … plot ${mx} à ${2*mx+2} m`}).${t!=null?` <b style="color:var(--orange)">Cible : ${pts(t)} (plot ${t})</b>`:''}</p>
+    const W = A_.word[0].toUpperCase() + A_.word.slice(1);
+    h += `<section class="entry-sec sec-${a}">${targetCol(n, sid, a)}<div class="sec-main">
+      <h2>${A_.ico} ${A_.label} · ${nb} ${A_.word}${nb>1?'s':''}</h2>
       <div class="dials">`;
     for (let k = 0; k < nb; k++) {
-      h += `<div class="dial-card"><h3>${A_.word[0].toUpperCase()+A_.word.slice(1)} ${k+1}</h3>
-        <svg class="dial" viewBox="0 0 200 200" data-a="${a}" data-k="${k}">${dialInner(p[k], mx, t, a)}</svg>
+      h += `<div class="dial-card dial-${a}"><h3><span class="big-ico">${A_.ico}</span> ${W} ${k+1}</h3>
+        <svg class="dial${mx>12?' big':''}" viewBox="0 0 200 200" data-a="${a}" data-k="${k}">${dialInner(p[k], mx, t, a)}</svg>
+        ${t!=null?`<div class="dial-tgt">🎯 cible ${pts(t)}</div>`:''}
         <button class="btn small ghost" data-action="dialClear" data-a="${a}" data-k="${k}">Effacer</button></div>`;
     }
-    h += `</div>`;
+    h += `</div></div></section>`;
   });
   h += `<div class="nav-bottom">
       <button class="btn" data-action="entry" data-sid="${prev?.id||''}" ${prev?'':'disabled'}>← ${prev?esc(nameOf(prev.id)):'Précédent'}</button>
-      <button class="btn primary" data-action="go" data-view="saisie">▦ Tuiles</button>
+      <button class="btn primary" data-action="go" data-view="saisie">▦ Retour aux élèves</button>
       <button class="btn" data-action="entry" data-sid="${next?.id||''}" ${next?'':'disabled'}>${next?esc(nameOf(next.id)):'Suivant'} →</button></div>`;
   return h;
 }
@@ -408,7 +414,7 @@ function dialColor(v, t){ return v==null ? '#9AA3B5' : t==null ? '#0B2A6B' : lev
 function dialText(v, t){ return v==null || t==null ? '#fff' : level(v, t).fg; }
 function dialInner(v, max, t, a){
   const col = dialColor(v, t), step = DIAL_SPAN / max;
-  const rr = max > 9 ? 12.5 : 15, ro = max > 9 ? 16 : 19, fs = max > 9 ? 14 : 17;
+  const [rr, ro, fs] = max <= 9 ? [15, 19, 17] : max <= 12 ? [12.5, 16, 14] : max <= 16 ? [10, 14, 12] : [8.5, 13, 10.5];
   let s = `<path d="${arc(DR, DIAL_START, -DIAL_START)}" stroke="#DCE2EE" stroke-width="20" fill="none" stroke-linecap="round"/>`;
   if (v != null && v > 0) s += `<path d="${arc(DR, DIAL_START, DIAL_START + v*step)}" stroke="${col}" stroke-width="20" fill="none" stroke-linecap="round"/>`;
   for (let i = 0; i <= max; i++) {
@@ -420,7 +426,7 @@ function dialInner(v, max, t, a){
   s += `<circle cx="100" cy="92" r="30" fill="${v==null?'#fff':col}" stroke="${v==null?'#DCE2EE':'#0A1633'}" stroke-width="2.5"/>
         <text x="100" y="106" text-anchor="middle" font-size="38" fill="${v==null?'#9AA3B5':dialText(v, t)}">${v==null?'–':v}</text>
         <text x="100" y="140" text-anchor="middle" font-size="15" fill="#5B6478">${v==null?'plot':v===0?'aucun plot':esc(ACT[a].unit(v))}</text>
-        ${t!=null?`<text x="100" y="192" text-anchor="middle" font-size="14" fill="#F07000">🎯 cible ${pts(t)}</text>`:''}`;
+        <text x="100" y="188" text-anchor="middle" font-size="34">${ACT[a].ico}</text>`;
   return s;
 }
 function bindEntry(){
@@ -505,15 +511,15 @@ function viewStatsDetail(){
   return `<div class="entry-head">${col?`<span class="band" style="background:${col.c}"></span>`:''}<div class="who">${esc(nameOf(sid))}</div>
       <div class="tgt"><div class="tgt-box"><div class="muted" style="font-weight:800">🏃 CIBLE L${cur}</div><div class="v">${plotShort('s', targetInfo(cur, sid, 's').value)}</div></div>
       <div class="tgt-box"><div class="muted" style="font-weight:800">🏀 CIBLE L${cur}</div><div class="v">${plotShort('b', targetInfo(cur, sid, 'b').value)}</div></div></div></div>
-    <div class="btn-row" style="margin-bottom:12px"><button class="btn" data-action="go" data-view="stats">← Retour aux tuiles</button></div>
+    <div class="btn-row" style="margin-bottom:12px"><button class="btn" data-action="go" data-view="stats">← Retour aux élèves</button></div>
     <div class="card strong"><h2>💡 Conseils</h2>${advices(sid).map(a=>`<div class="advice ${a.cls}">${a.t}</div>`).join('')}</div>
     <div class="card"><b>Couleurs : écart entre tes points et ta cible</b>${legend()}</div>
     <div class="stats-cols">${statsColumn(sid, 's')}${statsColumn(sid, 'b')}</div>
     <div class="card strong" id="projet"><h2>📝 Mon projet pour la dernière leçon (leçon ${N})</h2>
-      <div class="muted" style="font-weight:700">Rappel de toutes mes cibles, puis je choisis mes cibles pour la dernière leçon.</div>
+      
       ${projRow('s')}${projRow('b')}
-      <label class="field" style="margin-top:12px">Mon projet (ce que je vais faire pour réussir)
-        <textarea id="proj-text" placeholder="Ex. : je vise 7 points en sprint car j'ai marqué 6 points à chaque course. Je vais bien m'échauffer…">${esc(P.texte||'')}</textarea></label>
+      <label class="field" style="margin-top:12px">Mon projet
+        <textarea id="proj-text" >${esc(P.texte||'')}</textarea></label>
       <div class="btn-row" style="margin-top:10px"><button class="btn green" data-action="projSave">💾 Enregistrer mon projet</button>
         ${P.ts?`<span class="muted">Enregistré le ${new Date(P.ts).toLocaleDateString('fr-FR')}</span>`:''}</div>
     </div>`;
@@ -577,36 +583,36 @@ function profLecons(){
     const L = lesson(n);
     const srcSel = sourceSelect(n, 'Cibles de cette leçon');
     const attF = a => { const ov = isOverride(n, a);
-      return rangeField(`${ACT[a].ico} ${a==='s'?'Sprints':'Lancers'} :`, nbAtt(n, a), `data-field="att" data-n="${n}" data-a="${a}"`, 0, 10,
+      return rangeField(`${ACT[a].ico} ${a==='s'?'Sprints':'Tirs'} :`, nbAtt(n, a), `data-field="att" data-n="${n}" data-a="${a}"`, 0, 10,
         ov ? ` <button class="btn small ghost" data-action="attReset" data-n="${n}" data-a="${a}">↺ base</button>` : ' <span class="muted">(base)</span>'); };
     rows += `<div class="lesson-row"><div class="lesson-num ${n===cur?'cur':''}">${n}</div><div class="lesson-fields">
       <label class="field full">Titre / contenu de la leçon${isLast(n)?' — dernière leçon : projet élève':''}
-        <input type="text" data-field="title" data-n="${n}" value="${esc(L.title)}" placeholder="Ex. : Courir à sa cible puis lancer long…"></label>
+        <input type="text" data-field="title" data-n="${n}" value="${esc(L.title)}" ></label>
       ${attF('s')}${attF('b')}
       <div class="full">${srcSel}</div>
     </div></div>`;
   }
   return `<div class="card strong"><h2>Leçon en cours</h2>
-      <p class="muted" style="font-weight:700;margin-top:-4px">Les tablettes s'ouvrent sur cette leçon et ne peuvent saisir que sur elle (pensez à renvoyer le QR aux tablettes après un changement).</p>
+      
       <div class="lesson-picker">${Array.from({length:N},(_,i)=>i+1).map(n=>`<button class="lp ${n===cur?'on':''}" data-action="setCurrent" data-n="${n}">${n}</button>`).join('')}</div></div>
     <div class="card"><h2>Cycle</h2><div class="row">
       <label class="field grow">Classe / groupe<input type="text" data-field="className" value="${esc(st.className)}" placeholder="Ex. : 2nde 4"></label>
       <div class="field">Nombre de leçons du cycle${stepper('nbLessons','',N)}</div></div></div>
     <div class="card strong"><h2>Tentatives (base de chaque leçon)</h2>
-      <p class="muted" style="margin-top:-4px;font-weight:700">Valeur appliquée à toutes les leçons ; ajustable ensuite leçon par leçon avec les curseurs plus bas.</p>
+      
       <div class="lesson-fields" style="grid-template-columns:1fr 1fr">
         ${rangeField('🏃 Sprints de 5 s :', st.baseCourses, 'data-field="set" data-k="baseCourses"', 1, 10)}
-        ${rangeField('🏀 Lancers longs :', st.baseTirs, 'data-field="set" data-k="baseTirs"', 1, 10)}</div></div>
+        ${rangeField('🏀 Tirs basket :', st.baseTirs, 'data-field="set" data-k="baseTirs"', 1, 10)}</div></div>
     <div class="card strong"><h2>Plots (1 point par plot atteint)</h2>
       <div class="lesson-fields" style="grid-template-columns:1fr 1fr">
-        ${rangeField('🏃 Plots sprint :', st.plotsS, 'data-field="set" data-k="plotsS"', 3, 11, ` <span class="muted">15 → ${14+st.plotsS} km/h</span>`)}
-        ${rangeField('🏀 Plots lancer :', st.plotsB, 'data-field="set" data-k="plotsB"', 3, 11, ` <span class="muted">4 → ${2*st.plotsB+2} m</span>`)}
+        ${rangeField('🏃 Plots sprint :', st.plotsS, 'data-field="set" data-k="plotsS"', 1, 20, ` <span class="muted">15 → ${14+st.plotsS} km/h</span>`)}
+        ${rangeField('🏀 Plots basket :', st.plotsB, 'data-field="set" data-k="plotsB"', 1, 20, ` <span class="muted">4 → ${2*st.plotsB+2} m</span>`)}
         ${rangeField('🏃 Écart cible facile / difficile :', st.ecartS, 'data-field="set" data-k="ecartS"', 1, 3, ` plot(s) <span class="muted">≈ ${fmt(st.ecartS*5/3.6)} m</span>`)}
         ${rangeField('🏀 Écart cible facile / difficile :', st.ecartB, 'data-field="set" data-k="ecartB"', 1, 3, ` plot(s) <span class="muted">= ${2*st.ecartB} m</span>`)}
       </div>
       <details style="margin-top:10px"><summary style="font-weight:900;font-size:18px;cursor:pointer">📏 Mise en place des plots (distances)</summary>${plotTable()}</details></div>
     <div class="card"><h2>Leçons</h2>
-      <p class="muted" style="margin-top:-4px">À chaque leçon on saisit le sprint ET le lancer de chaque élève (molettes de 0 au nombre de plots). Les cibles se règlent dans l'onglet 🎯 Cibles : à la main en leçon 1, puis « utiliser les résultats de la leçon X » quand vous voulez les mettre à jour.</p>${rows}</div>`;
+      ${rows}</div>`;
 }
 function sourceSelect(n, label){
   const L = lesson(n);
@@ -640,9 +646,6 @@ function profCibles(){
       <button class="btn small" data-action="bulkApply" data-a="${a}">Appliquer à tous</button></div>`; };
   return `<div class="card strong"><h2>🎯 Cibles · Leçon ${n}${isLast(n)?' (dernière : projet élève)':''}</h2>
       ${sourceSelect(n, 'Cibles de la classe')}
-      <p class="muted" style="font-weight:700">Une cible (choisie ici, ou modifiée à la main avec − / +) reste la norme pour les leçons suivantes jusqu'au prochain changement.
-      La cible = nombre de points à marquer à chaque tentative (1 point par plot atteint).
-      Facile / Difficile ne vaut que pour le jour même (🏃 ±${S.settings.ecartS} pt, 🏀 ±${S.settings.ecartB} pt).${isLast(n)?' À la dernière leçon, les cibles choisies par l\'élève dans son projet sont utilisées.':''}</p>
       <details><summary style="font-weight:900;cursor:pointer">Même cible pour toute la classe…</summary><div style="display:grid;gap:10px;margin-top:10px">${bulk('s')}${bulk('b')}</div></details></div>
     <div class="tiles">${list.map(s => { const at = attOf(n, s.id);
     return `<div class="att-tile tg-tile">${band(s.id)}<div class="name">${esc(nameOf(s.id))} ${at==='abs'?'<span class="tag abs">Abs.</span>':at==='inap'?'<span class="tag inapte">Inapte</span>':''}</div>
@@ -651,7 +654,6 @@ function profCibles(){
 function profEleves(){
   const list = sortedStudents();
   return `<div class="card strong"><h2>Importer la liste (Pronote)</h2>
-      <p class="muted" style="margin-top:-4px">Fichier <b>.xlsx</b> ou <b>.csv</b> : « NOM Prénom » en colonne A, <u>ou</u> Nom en colonne A et Prénom en colonne B. Les lignes d'en-tête sont ignorées.</p>
       <div class="btn-row"><label class="btn primary">📂 Choisir un fichier<input type="file" id="file-students" accept=".xlsx,.xls,.csv,.txt" hidden></label></div></div>
     <div class="card"><h2>Ajouter un élève</h2><div class="row">
       <label class="field grow">Nom<input type="text" id="add-nom" placeholder="DUPONT"></label>
@@ -665,7 +667,7 @@ function profEleves(){
 function profAppel(){
   const n = curLesson(), L = lesson(n);
   const abs = S.students.filter(s=>attOf(n,s.id)==='abs').length, inap = S.students.filter(s=>attOf(n,s.id)==='inap').length;
-  return `<div class="card strong"><h2>Appel · Leçon ${n}</h2><div class="muted" style="font-weight:700">${S.students.length-abs-inap} présent(s) · ${abs} absent(s) · ${inap} inapte(s). Les absents et inaptes n'apparaissent pas dans la saisie du jour.</div></div>
+  return `<div class="card strong"><h2>Appel · Leçon ${n}</h2><div class="muted" style="font-weight:700">${S.students.length-abs-inap} présent(s) · ${abs} absent(s) · ${inap} inapte(s).</div></div>
     <div class="tiles">${sortedStudents().map(s => { const a = attOf(n,s.id);
       return `<div class="att-tile ${a==='abs'?'abs':a==='inap'?'inapte':''}">${band(s.id)}<div class="name">${esc(nameOf(s.id))}</div>
         <div class="btn-row"><button class="btn ${a==='abs'?'abs-on':''}" data-action="att" data-sid="${s.id}" data-v="abs">Absent</button>
@@ -677,7 +679,7 @@ function profGroupes(){
     return `<div class="gzone" data-zone="${k}"><h3 data-action="dropSel" data-zone="${k}">${colr?`<span class="dot" style="background:${colr}"></span>`:''}${label} <span class="muted">(${items.length})</span></h3>
       <div class="gitems">${items.map(s=>`<div class="gitem ${UI.sel===s.id?'sel':''}" data-gid="${s.id}" style="${colr?`border-left:12px solid ${colr}`:''}">${esc(nameOf(s.id))}</div>`).join('')}</div></div>`;
   };
-  return `<div class="card strong"><h2>Groupes de chasubles</h2><p class="muted" style="margin-top:-4px;font-weight:700">Faites glisser les prénoms dans la couleur voulue (ou touchez un prénom puis le titre d'une couleur). La couleur apparaît sur la tuile de l'élève.</p>
+  return `<div class="card strong"><h2>Groupes de chasubles</h2>
       <button class="btn small ghost" data-action="clearGroups">Tout retirer</button></div>
     <div class="groups">${zone('', 'Sans chasuble', null)}${COLORS.map(c=>zone(c.k, c.n, c.c)).join('')}</div>`;
 }
@@ -714,17 +716,17 @@ function bindGroups(){
 }
 function profPartage(){
   return `<div class="card strong"><h2>1 · Envoyer la leçon aux tablettes</h2>
-      <p class="muted" style="margin-top:-4px;font-weight:700">Liste des élèves (prénoms seulement), leçon en cours, cibles, chasubles, appel et résultats déjà centralisés. Sur chaque tablette : Accueil → « Recevoir la leçon (QR) ».</p>
-      <button class="btn primary" data-action="showFullQR">📤 Afficher le QR de la leçon ${curLesson()}</button></div>
+      <div class="btn-row"><button class="btn primary" data-action="showFullQR" data-light="1">📤 QR léger : leçon ${curLesson()} (conseillé)</button>
+      <button class="btn" data-action="showFullQR" data-light="0">📤 QR complet (+ historique pour les statistiques)</button></div>
+      </div>
     <div class="card strong"><h2>2 · Récupérer les saisies des tablettes</h2>
-      <p class="muted" style="margin-top:-4px;font-weight:700">Sur chaque tablette : Accueil → « Envoyer mes saisies (QR) », puis scannez ici. Les données sont fusionnées (la saisie la plus récente est conservée).</p>
       <button class="btn orange" data-action="scanResults">📷 Scanner une tablette</button></div>
-    <div class="card"><h2>Sans caméra : par fichier</h2><div class="btn-row">
-      <button class="btn" data-action="fileFull">💾 Fichier leçon (.json)</button>
+    <div class="card"><h2>Sans caméra : par fichier (AirDrop, Partage à proximité, mail…)</h2><div class="btn-row">
+      <button class="btn" data-action="fileFull">📤 Partager la leçon en fichier</button>
       <label class="btn">📂 Importer un fichier (.json)<input type="file" id="file-sync" accept=".json,application/json" hidden></label></div></div>`;
 }
 function profExport(){
-  return `<div class="card strong"><h2>Export Excel</h2><p class="muted" style="margin-top:-4px">Synthèse par élève + détail de chaque leçon (cibles, courses, tirs, appel, projet).</p>
+  return `<div class="card strong"><h2>Export Excel</h2>
       <button class="btn green" data-action="exportXlsx">📊 Exporter en .xlsx</button></div>
     <div class="card"><h2>Sauvegarde complète</h2><div class="btn-row">
       <button class="btn" data-action="backup">💾 Sauvegarder (.json)</button>
@@ -809,8 +811,8 @@ function exportXlsx(){
   const num = v => v == null ? '' : v;
   const r2 = v => v == null ? '' : Math.round(v*100)/100;
   const head = ['Nom', 'Prénom', 'Affiché', 'Chasuble'];
-  for (let n = 1; n <= N; n++) head.push(`L${n} sprint cible`, `L${n} sprint moy.`, `L${n} lancer cible`, `L${n} lancer moy.`);
-  head.push('Projet : cible sprint', 'Projet : cible lancer', 'Projet : texte');
+  for (let n = 1; n <= N; n++) head.push(`L${n} sprint cible`, `L${n} sprint moy.`, `L${n} basket cible`, `L${n} basket moy.`);
+  head.push('Projet : cible sprint', 'Projet : cible basket', 'Projet : texte');
   const syn = [head];
   let maxA = 0; for (let n = 1; n <= N; n++) maxA = Math.max(maxA, nbAtt(n,'s'), nbAtt(n,'b'));
   const det = [['Nom','Prénom','Leçon','Titre','Statut','Épreuve','Cible (points)','Cible (plot)','Ajustement (plots)',
@@ -842,8 +844,8 @@ function exportXlsx(){
   XLSX.utils.book_append_sheet(wb, w1, 'Synthèse');
   XLSX.utils.book_append_sheet(wb, w2, 'Détail par leçon');
   const lessons = []; for (let n = 1; n <= N; n++) lessons.push([n, lesson(n).title, nbAtt(n,'s'), nbAtt(n,'b'), hasSource(n) ? `Résultats L${lesson(n).source} (${lesson(n).calc==='avg'?'moyenne':'meilleur'})` : (n===1?'À la main':'Reprise leçon précédente')]);
-  XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet([['Leçon','Titre','Sprints','Lancers','Cibles de base'], ...lessons]), 'Leçons');
-  const plots = [['Plot','Sprint : vitesse (km/h)','Sprint : distance en 5 s (m)','Lancer : distance (m)']];
+  XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet([['Leçon','Titre','Sprints','Tirs basket','Cibles de base'], ...lessons]), 'Leçons');
+  const plots = [['Plot','Sprint : vitesse (km/h)','Sprint : distance en 5 s (m)','Basket : distance (m)']];
   for (let k = 1; k <= Math.max(maxPlots('s'), maxPlots('b')); k++)
     plots.push([k, k<=maxPlots('s')?14+k:'', k<=maxPlots('s')?Math.round((14+k)/3.6*5*100)/100:'', k<=maxPlots('b')?2*k+2:'']);
   XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet(plots), 'Plots');
@@ -855,12 +857,21 @@ function exportXlsx(){
 /* ---------------------------------------------------------------------
    Échanges : paquets, compression, QR codes
    --------------------------------------------------------------------- */
-function buildFull(){
-  return { k:'full', from:S.deviceId, at:now(), st:{
-    settings:{ nbLessons:S.settings.nbLessons, current:curLesson(), className:S.settings.className,
+function buildFull(light=false){
+  const cur = curLesson();
+  let results = S.results, fixed = null;
+  if (light) {                     // QR léger : cibles déjà calculées + résultats de la leçon en cours seulement
+    results = S.results[cur] ? { [cur]: S.results[cur] } : {};
+    fixed = { n: cur, t: {} };
+    S.students.forEach(st => { fixed.t[st.id] = [baseTarget(cur, st.id, 's'), baseTarget(cur, st.id, 'b')]; });
+  }
+  const lessons = JSON.parse(JSON.stringify(S.lessons));
+  if (light) Object.entries(lessons).forEach(([n, L]) => { if (+n !== cur) { delete L.manual; delete L.manualB; delete L.adjust; delete L.adjustB; delete L.att; } });
+  return { k:'full', light, from:S.deviceId, at:now(), st:{
+    settings:{ nbLessons:S.settings.nbLessons, current:cur, className:S.settings.className,
       baseCourses:S.settings.baseCourses, baseTirs:S.settings.baseTirs, plotsS:S.settings.plotsS, plotsB:S.settings.plotsB, ecartS:S.settings.ecartS, ecartB:S.settings.ecartB },
     students: S.students.map(s => ({ id:s.id, disp:nameOf(s.id), g:s.g||null })),
-    lessons: S.lessons, results: S.results, projects: S.projects } };
+    lessons, fixed, results, projects: light ? {} : S.projects } };
 }
 function buildMine(){
   const results = {}, projects = {};
@@ -894,6 +905,8 @@ async function applyPacket(p){
     const pin = S.settings.pin; S.settings = { ...DEFAULT_SETTINGS, ...st.settings, pin };
     S.students = st.students.map(s => ({ id:s.id, disp:s.disp, g:s.g }));
     S.lessons = st.lessons || {};
+    if (st.fixed) { const L = lesson(st.fixed.n); L.fixedS = {}; L.fixedB = {};
+      Object.entries(st.fixed.t).forEach(([sid, [a, b]]) => { if (a != null) L.fixedS[sid] = a; if (b != null) L.fixedB[sid] = b; }); }
     const n = mergeData(st.results, st.projects);
     save(); toast(`✓ Leçon ${st.settings.current} reçue : ${S.students.length} élèves`, 3000);
     go('home');
@@ -907,128 +920,266 @@ async function applyPacket(p){
   throw new Error('Type de données inconnu');
 }
 
-const b64enc = u8 => { let s=''; for (let i=0;i<u8.length;i+=0x8000) s += String.fromCharCode.apply(null, u8.subarray(i,i+0x8000)); return btoa(s); };
-const b64dec = s => Uint8Array.from(atob(s), c => c.charCodeAt(0));
+/* Compactage des résultats pour des QR codes plus petits */
+function packRP(results, projects){
+  const D = [], di = d => { let i = D.indexOf(d); if (i < 0) { D.push(d); i = D.length-1; } return i; };
+  let T = Infinity;
+  Object.values(results||{}).forEach(byS => Object.values(byS||{}).forEach(r => { if (r.ts) T = Math.min(T, r.ts); }));
+  Object.values(projects||{}).forEach(p => { if (p.ts) T = Math.min(T, p.ts); });
+  T = isFinite(T) ? Math.floor(T/1000) : 0;
+  const R = {}, P = {};
+  Object.entries(results||{}).forEach(([n, byS]) => { R[n] = {}; Object.entries(byS||{}).forEach(([sid, r]) => {
+    R[n][sid] = [r.c||[], r.b||[], Math.floor((r.ts||0)/1000) - T, di(r.d)]; }); });
+  Object.entries(projects||{}).forEach(([sid, p]) => { P[sid] = [p.cibleS ?? null, p.cibleB ?? null, p.texte||'', Math.floor((p.ts||0)/1000) - T, di(p.d)]; });
+  return { T, D, R, P };
+}
+function unpackRP(z){
+  const results = {}, projects = {};
+  Object.entries(z.R||{}).forEach(([n, byS]) => { results[n] = {}; Object.entries(byS).forEach(([sid, a]) => {
+    results[n][sid] = { c:a[0], b:a[1], ts:(z.T + a[2])*1000, d:z.D[a[3]] }; }); });
+  Object.entries(z.P||{}).forEach(([sid, a]) => { projects[sid] = { cibleS:a[0], cibleB:a[1], texte:a[2], ts:(z.T + a[3])*1000, d:z.D[a[4]] }; });
+  return { results, projects };
+}
+function packPacket(p){
+  const q = JSON.parse(JSON.stringify(p));
+  if (q.st) { q.st.z = packRP(q.st.results, q.st.projects); delete q.st.results; delete q.st.projects;
+    Object.values(q.st.lessons||{}).forEach(L => Object.keys(L).forEach(k => { if (L[k] && typeof L[k]==='object' && !Object.keys(L[k]).length) delete L[k]; })); }
+  else if (q.results) { q.z = packRP(q.results, q.projects); delete q.results; delete q.projects; }
+  return q;
+}
+function unpackPacket(q){
+  if (q.st && q.st.z) { Object.assign(q.st, unpackRP(q.st.z)); delete q.st.z; }
+  else if (q.z) { Object.assign(q, unpackRP(q.z)); delete q.z; }
+  return q;
+}
+/* Base45 : alphabet du mode « alphanumérique » des QR codes (≈ 30 % de données en plus par QR) */
+const B45 = '0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZ $%*+-./:';
+function b45enc(u8){ let s = '';
+  for (let i = 0; i < u8.length; i += 2) {
+    if (i + 1 < u8.length) { let x = u8[i]*256 + u8[i+1]; const c = x % 45; x = (x-c)/45; const d = x % 45; const e = (x-d)/45; s += B45[c] + B45[d] + B45[e]; }
+    else { const x = u8[i], c = x % 45, d = (x-c)/45; s += B45[c] + B45[d]; }
+  } return s; }
+function b45dec(s){ const out = [];
+  for (let i = 0; i < s.length; i += 3) {
+    const c = B45.indexOf(s[i]), d = B45.indexOf(s[i+1]);
+    if (i + 2 < s.length) { const x = c + d*45 + B45.indexOf(s[i+2])*2025; out.push(x >> 8, x & 255); }
+    else out.push(c + d*45);
+  } return new Uint8Array(out); }
 async function streamBytes(u8, ts){ const st = new Blob([u8]).stream().pipeThrough(ts); return new Uint8Array(await new Response(st).arrayBuffer()); }
 async function encodePacket(obj){
-  const raw = new TextEncoder().encode(JSON.stringify(obj));
+  const raw = new TextEncoder().encode(JSON.stringify(packPacket(obj)));
   if (window.CompressionStream) {
-    try { return 'z' + b64enc(await streamBytes(raw, new CompressionStream('deflate-raw'))); } catch(e){}
+    try { return 'Z' + b45enc(await streamBytes(raw, new CompressionStream('deflate-raw'))); } catch(e){}
   }
-  return 'j' + b64enc(raw);
+  return 'J' + b45enc(raw);
 }
 async function decodePacket(str){
-  const flag = str[0], bytes = b64dec(str.slice(1));
+  if (str[0] === 'z' || str[0] === 'j') {           // ancien format (base64)
+    let raw = Uint8Array.from(atob(str.slice(1)), c => c.charCodeAt(0));
+    if (str[0] === 'z') raw = await streamBytes(raw, new DecompressionStream('deflate-raw'));
+    return JSON.parse(new TextDecoder().decode(raw));
+  }
+  const flag = str[0], bytes = b45dec(str.slice(1));
   let raw = bytes;
-  if (flag === 'z') {
+  if (flag === 'Z') {
     if (!window.DecompressionStream) throw new Error('Appareil trop ancien pour décompresser');
     raw = await streamBytes(bytes, new DecompressionStream('deflate-raw'));
   }
-  return JSON.parse(new TextDecoder().decode(raw));
+  return unpackPacket(JSON.parse(new TextDecoder().decode(raw)));
 }
 function chunkQR(payload, type){
-  const id = rnd(4), parts = [];
+  const id = rnd(3).toUpperCase(), parts = [];
   const n = Math.max(1, Math.ceil(payload.length / QR_CHUNK));
-  for (let i = 0; i < n; i++) parts.push(`B5|${type}|${id}|${i+1}|${n}|` + payload.slice(i*QR_CHUNK, (i+1)*QR_CHUNK));
+  const per = Math.ceil(payload.length / n);          // morceaux égaux = QR les moins denses possible
+  for (let i = 0; i < n; i++) parts.push(`B5:${type}:${id}:${i+1}:${n}:` + payload.slice(i*per, (i+1)*per));
   return parts;
 }
 function qrDataURL(text){
-  const qr = qrcode(0, 'M'); qr.addData(text, 'Byte'); qr.make();
-  return qr.createDataURL(8, 2);
+  const qr = qrcode(0, 'L'); qr.addData(text, 'Alphanumeric'); qr.make();
+  return qr.createDataURL(10, 40);   // marge blanche = 4 modules (zone de silence obligatoire)
+}
+/* Lecture d'un morceau scanné : « B5:F:ID:i:n:données » */
+function parsePart(txt){
+  if (txt && txt.startsWith('B5|')) { const f = txt.split('|'); if (f.length < 6) return null;
+    return { type:f[1], id:'L'+f[2], i:+f[3], n:+f[4], data:f.slice(5).join('|') }; }
+  if (!txt || !txt.startsWith('B5:')) return null;
+  const f = txt.split(':');
+  if (f.length < 6) return null;
+  return { type:f[1], id:f[2], i:+f[3], n:+f[4], data:f.slice(5).join(':') };
 }
 
 /* Affichage d'une série de QR (défilement automatique) */
 let qrTimer = null;
 function showQRSeries(parts, container, title){
-  let i = 0, auto = parts.length > 1;
+  let i = 0, auto = parts.length > 1, speed = 2000;
+  const imgs = parts.map(qrDataURL);
   const draw = () => {
     container.innerHTML = `<div class="qr-box">
       ${title?`<h2 class="center">${title}</h2>`:''}
-      <img src="${qrDataURL(parts[i])}" alt="QR code ${i+1}/${parts.length}">
+      <img src="${imgs[i]}" alt="QR code ${i+1}/${parts.length}">
       <div class="qr-part">${parts.length>1?`QR ${i+1} / ${parts.length}`:'QR unique'}</div>
-      ${parts.length>1?`<div class="btn-row"><button class="btn" data-q="prev">←</button>
+      ${parts.length>1?`<div class="qr-nums">${parts.map((_,k)=>`<button class="${k===i?'on':''}" data-q="${k}">${k+1}</button>`).join('')}</div>
+        <div class="btn-row"><button class="btn" data-q="prev">←</button>
         <button class="btn ${auto?'orange':''}" data-q="auto">${auto?'⏸ Pause':'▶ Défilement auto'}</button>
-        <button class="btn" data-q="next">→</button></div>
-        <p class="muted center" style="font-weight:700;max-width:460px">Tenez la tablette qui scanne face à l'écran : les ${parts.length} QR défilent seuls, le scanner assemble tout.</p>`:''}
+        <button class="btn" data-q="next">→</button></div>`:''}
+      
     </div>`;
     container.querySelectorAll('[data-q]').forEach(b => b.onclick = () => {
       const q = b.dataset.q;
       if (q === 'auto') auto = !auto;
-      if (q === 'prev') { auto = false; i = (i - 1 + parts.length) % parts.length; }
-      if (q === 'next') { auto = false; i = (i + 1) % parts.length; }
+      else if (q === 'prev') { auto = false; i = (i - 1 + parts.length) % parts.length; }
+      else if (q === 'next') { auto = false; i = (i + 1) % parts.length; }
+      else { auto = false; i = +q; }
       draw();
     });
   };
   clearInterval(qrTimer);
-  qrTimer = setInterval(() => { if (auto && document.body.contains(container)) { i = (i+1) % parts.length; draw(); } else if (!document.body.contains(container)) clearInterval(qrTimer); }, 1400);
+  qrTimer = setInterval(() => { if (!document.body.contains(container)) return clearInterval(qrTimer); if (auto) { i = (i+1) % parts.length; draw(); } }, speed);
   draw();
 }
 
-/* Scanner (caméra + jsQR) */
+/* Scanner : caméra (détecteur natif si disponible, sinon jsQR sur le centre de l'image en pleine résolution)
+   + secours « photo du QR » (appareil photo natif, mise au point automatique) */
 let scan = null;
 function stopScan(){
   if (!scan) return;
   scan.stopped = true;
+  clearTimeout(scan.timer);
   if (scan.stream) scan.stream.getTracks().forEach(t => t.stop());
   scan = null;
 }
+let nativeDetector;
+async function getNativeDetector(){
+  if (nativeDetector !== undefined) return nativeDetector;
+  nativeDetector = null;
+  try { if ('BarcodeDetector' in window && (await BarcodeDetector.getSupportedFormats()).includes('qr_code')) nativeDetector = new BarcodeDetector({ formats:['qr_code'] }); } catch(e){}
+  return nativeDetector;
+}
+/* jsQR lit mal les images floues/bruitées en pleine résolution : on réduit l'image par moyennage
+   (filtre « boîte », qui efface le bruit du capteur) à plusieurs échelles, en alternant d'une image à l'autre. */
+const SCAN_SCALES = [0.4, 0.3, 0.5, 0.24, 0.62, 0.35, 0.8, 0.45];
+function grabGray(ctx, cv, src, sx, sy, sw, sh, maxSide){
+  const k = Math.min(1, maxSide / Math.max(sw, sh));
+  const w = Math.round(sw*k), h = Math.round(sh*k);
+  cv.width = w; cv.height = h; ctx.imageSmoothingEnabled = true;
+  ctx.drawImage(src, sx, sy, sw, sh, 0, 0, w, h);
+  const d = ctx.getImageData(0, 0, w, h).data, g = new Float32Array(w*h);
+  for (let i = 0, j = 0; i < g.length; i++, j += 4) g[i] = d[j]*0.3 + d[j+1]*0.59 + d[j+2]*0.11;
+  return { g, w, h };
+}
+function boxDown(G, f){
+  const { g, w, h } = G;
+  if (f >= 0.999) return G;
+  const nw = Math.max(1, Math.round(w*f)), nh = Math.max(1, Math.round(h*f));
+  const o = new Float32Array(nw*nh), c = new Float32Array(nw*nh);
+  for (let y = 0; y < h; y++) { const yy = Math.min(nh-1, (y*f)|0), row = yy*nw;
+    for (let x = 0; x < w; x++) { const i = row + Math.min(nw-1, (x*f)|0); o[i] += g[y*w+x]; c[i]++; } }
+  for (let i = 0; i < o.length; i++) o[i] /= c[i] || 1;
+  return { g:o, w:nw, h:nh };
+}
+function jsqrGray(G, both){
+  const { g, w, h } = G, d = new Uint8ClampedArray(w*h*4);
+  for (let i = 0, j = 0; i < g.length; i++, j += 4) { d[j] = d[j+1] = d[j+2] = g[i]; d[j+3] = 255; }
+  const c = jsQR(d, w, h, { inversionAttempts: both ? 'attemptBoth' : 'dontInvert' });
+  return c && c.data ? c.data : null;
+}
+function jsqrOn(ctx, w, h, both){
+  const img = ctx.getImageData(0, 0, w, h);
+  const c = jsQR(img.data, w, h, { inversionAttempts: both ? 'attemptBoth' : 'dontInvert' });
+  return c && c.data ? c.data : null;
+}
+async function decodeImageSource(src, sw, sh, cv, ctx, frame, all=false){
+  const det = await getNativeDetector();
+  if (det) { try { const r = await det.detect(src); if (r && r.length) return r.map(x => x.rawValue); } catch(e){} }
+  const side = Math.min(sw, sh) * 0.92, sx = (sw - side)/2, sy = (sh - side)/2;
+  const G = grabGray(ctx, cv, src, sx, sy, side, side, 1100);
+  const scales = all ? SCAN_SCALES : [SCAN_SCALES[frame % SCAN_SCALES.length], SCAN_SCALES[(frame+3) % SCAN_SCALES.length]];
+  for (const f of scales) {
+    const t = jsqrGray(boxDown(G, f * side / G.w), all || frame % 5 === 4);
+    if (t) return [t];
+  }
+  if (all || frame % 4 === 3) {                      // image entière (QR hors du cadre)
+    const F = grabGray(ctx, cv, src, 0, 0, sw, sh, 1100);
+    for (const f of (all ? [0.35, 0.5, 0.7] : [0.5])) { const t = jsqrGray(boxDown(F, f), all); if (t) return [t]; }
+  }
+  return [];
+}
 async function startScan(container, expectType, onDone){
   stopScan();
-  container.innerHTML = `<div class="scan-wrap"><video playsinline muted autoplay></video><div class="scan-frame"></div></div>
-    <div style="max-width:520px;margin:12px auto"><div class="progress"><div style="width:0%"></div></div>
-    <p class="center" style="font-weight:900;font-size:20px" id="scan-msg">Visez le QR code…</p></div>`;
-  const video = container.querySelector('video'), bar = container.querySelector('.progress>div'), msg = container.querySelector('#scan-msg');
-  const me = scan = { stopped:false, parts:{}, id:null, n:0 };
+  container.innerHTML = `<div class="scan-wrap"><video playsinline webkit-playsinline muted autoplay></video><div class="scan-frame"></div></div>
+    <div style="max-width:560px;margin:12px auto">
+      <div class="scan-parts"></div>
+      <p class="center" style="font-weight:900;font-size:20px" id="scan-msg">Démarrage de la caméra…</p>
+      <div class="btn-row" style="justify-content:center"><label class="btn">📷 Prendre le QR en photo<input type="file" accept="image/*" capture="environment" hidden class="scan-photo"></label></div></div>`;
+  const video = container.querySelector('video'), msg = container.querySelector('#scan-msg'), partsEl = container.querySelector('.scan-parts');
+  const me = scan = { stopped:false, parts:{}, id:null, n:0, frame:0 };
+  const cv = document.createElement('canvas'), ctx = cv.getContext('2d', { willReadFrequently:true });
+  const showParts = () => { partsEl.innerHTML = me.n > 1 ? Array.from({length:me.n},(_,k)=>`<span class="${me.parts[k+1]?'ok':''}">${k+1}</span>`).join('') : ''; };
+  let finished = false;
+  const handle = async texts => {
+    for (const txt of texts) {
+      const pt = parsePart(txt);
+      if (!pt) { msg.textContent = 'QR non reconnu (ce n\'est pas un QR de l\'appli Biathlon).'; continue; }
+      if (expectType && pt.type !== expectType) { msg.textContent = pt.type === 'F' ? 'Ceci est un QR de leçon (prof), pas une saisie de tablette.' : 'Ceci est un QR de saisies (tablette), pas une leçon.'; continue; }
+      if (me.id !== pt.id) { me.id = pt.id; me.parts = {}; me.n = pt.n; }
+      if (!me.parts[pt.i]) { me.parts[pt.i] = pt.data; if (navigator.vibrate) navigator.vibrate(40); }
+      const got = Object.keys(me.parts).length;
+      showParts();
+      const miss = Array.from({length:me.n},(_,k)=>k+1).filter(k=>!me.parts[k]);
+      msg.textContent = me.n > 1 ? `QR reçus : ${got} / ${me.n}${miss.length && miss.length<=3 ? ' — il manque : ' + miss.join(', ') : ''}` : 'QR reçu !';
+      if (got === me.n && !finished) {
+        finished = true;
+        const payload = Array.from({length: me.n}, (_, k) => me.parts[k+1]).join('');
+        stopScan();
+        try { await onDone(await decodePacket(payload)); }
+        catch(e) { console.error(e); toast('⚠️ ' + e.message, 3500); }
+        return;
+      }
+    }
+  };
+  // secours photo
+  container.querySelector('.scan-photo').addEventListener('change', async e => {
+    const f = e.target.files[0]; e.target.value = ''; if (!f) return;
+    msg.textContent = 'Lecture de la photo…';
+    try {
+      const bmp = await createImageBitmap(f);
+      const pcv = document.createElement('canvas'), pctx = pcv.getContext('2d', { willReadFrequently:true });
+      const r = await decodeImageSource(bmp, bmp.width, bmp.height, pcv, pctx, 0, true);
+      if (r.length) await handle(r); else msg.textContent = '⚠️ QR non trouvé sur la photo : recommencez en cadrant le QR bien net, en entier.';
+    } catch(err) { msg.textContent = '⚠️ Photo illisible'; }
+  });
+  if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+    msg.innerHTML = '⚠️ Caméra en direct indisponible ici (l\'appli doit être ouverte en https). Utilisez « Prendre le QR en photo ».'; return;
+  }
   try {
-    me.stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: { ideal:'environment' }, width:{ ideal:1280 }, height:{ ideal:720 } }, audio:false });
+    me.stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: { ideal:'environment' }, width:{ ideal:1920 }, height:{ ideal:1080 } }, audio:false });
   } catch(e) {
-    msg.innerHTML = '⚠️ Caméra inaccessible. Autorisez la caméra (réglages du navigateur) ou utilisez l\'échange par fichier.';
+    msg.innerHTML = '⚠️ Caméra refusée ou occupée. Autorisez la caméra pour ce site (Réglages → Safari → Appareil photo) ou utilisez « Prendre le QR en photo ».';
     return;
   }
   if (me.stopped) { me.stream.getTracks().forEach(t=>t.stop()); return; }
+  const track = me.stream.getVideoTracks()[0];
+  try { await track.applyConstraints({ advanced:[{ focusMode:'continuous' }] }); } catch(e){}
+  video.setAttribute('playsinline', ''); video.muted = true;
   video.srcObject = me.stream; try { await video.play(); } catch(e){}
-  const cv = document.createElement('canvas'), ctx = cv.getContext('2d', { willReadFrequently:true });
+  msg.textContent = 'Visez le QR code…';
   const tick = async () => {
-    if (me.stopped) return;
+    if (me.stopped || finished) return;
     if (video.readyState >= 2 && video.videoWidth) {
-      const sc = Math.min(1, 800 / video.videoWidth);
-      cv.width = Math.round(video.videoWidth * sc); cv.height = Math.round(video.videoHeight * sc);
-      ctx.drawImage(video, 0, 0, cv.width, cv.height);
-      const img = ctx.getImageData(0, 0, cv.width, cv.height);
-      const code = jsQR(img.data, img.width, img.height, { inversionAttempts:'dontInvert' });
-      if (code && code.data && code.data.startsWith('B5|')) {
-        const [, type, id, i, n] = code.data.split('|', 5);
-        const data = code.data.split('|').slice(5).join('|');
-        if (expectType && type !== expectType) {
-          msg.textContent = type === 'F' ? 'Ceci est un QR de leçon (prof), pas une saisie de tablette.' : 'Ceci est un QR de saisies (tablette), pas une leçon.';
-        } else {
-          if (me.id !== id) { me.id = id; me.parts = {}; me.n = +n; }
-          if (!me.parts[i]) { me.parts[i] = data; if (navigator.vibrate) navigator.vibrate(40); }
-          const got = Object.keys(me.parts).length;
-          bar.style.width = (got / me.n * 100) + '%';
-          msg.textContent = me.n > 1 ? `QR reçus : ${got} / ${me.n}` : 'QR reçu !';
-          if (got === me.n) {
-            const payload = Array.from({length: me.n}, (_, k) => me.parts[k+1]).join('');
-            stopScan();
-            try { await onDone(await decodePacket(payload)); }
-            catch(e) { console.error(e); toast('⚠️ ' + e.message, 3500); }
-            return;
-          }
-        }
-      }
+      me.frame++;
+      try { const r = await decodeImageSource(video, video.videoWidth, video.videoHeight, cv, ctx, me.frame); if (r.length) await handle(r); } catch(e){ console.warn(e); }
     }
-    requestAnimationFrame(tick);
+    if (!me.stopped && !finished) me.timer = setTimeout(tick, 40);
   };
-  requestAnimationFrame(tick);
+  tick();
 }
 
 /* Vues d'échange côté tablette */
 function viewSend(){
   const { count } = buildMine();
-  return `<div class="card strong center"><b style="font-size:20px">${count} saisie(s) faite(s) sur cette tablette</b>
-    <div class="muted" style="font-weight:700">L'enseignant scanne ce QR dans « Espace enseignant → QR tablettes → Scanner une tablette ».</div></div>
+  return `<div class="card strong center"><b style="font-size:20px">${count} saisie(s) faite(s) sur cette tablette</b></div>
     <div id="qr-area" class="center">Préparation…</div>
-    <div class="btn-row" style="justify-content:center;margin-top:12px"><button class="btn" data-action="fileMine">💾 Enregistrer en fichier à la place</button></div>`;
+    <div class="btn-row" style="justify-content:center;margin-top:12px"><button class="btn" data-action="fileMine">📤 Partager en fichier (AirDrop…) à la place</button></div>`;
 }
 async function afterSend(){
   const { pkt } = buildMine();
@@ -1037,15 +1188,18 @@ async function afterSend(){
   showQRSeries(chunkQR(payload, 'R'), area, '');
 }
 function viewReceive(){
-  return `<div class="card strong center"><b style="font-size:20px">Scannez le QR « leçon » affiché par l'enseignant</b>
-    <div class="muted" style="font-weight:700">La tablette s'ouvrira ensuite sur la leçon choisie par le professeur. Les saisies déjà faites ici sont conservées.</div></div>
+  return `<div class="card strong center"><b style="font-size:20px">Scannez le QR « leçon » affiché par l'enseignant</b></div>
     <div id="scan-area"></div>
     <div class="btn-row" style="justify-content:center;margin-top:12px"><label class="btn">📂 Importer un fichier (.json)<input type="file" id="file-sync" accept=".json,application/json" hidden></label></div>`;
 }
 function afterReceive(){ startScan($('#scan-area'), 'F', p => applyPacket(p)); }
 
-function downloadJSON(obj, name){
+async function downloadJSON(obj, name){
   const blob = new Blob([JSON.stringify(obj)], { type:'application/json' });
+  try {
+    const file = new File([blob], name, { type:'application/json' });
+    if (navigator.canShare && navigator.canShare({ files:[file] })) { await navigator.share({ files:[file], title:name }); return; }
+  } catch(e) { if (e && e.name === 'AbortError') return; }
   const a = document.createElement('a'); a.href = URL.createObjectURL(blob); a.download = name;
   document.body.appendChild(a); a.click(); setTimeout(()=>{ URL.revokeObjectURL(a.href); a.remove(); }, 1000);
 }
@@ -1116,8 +1270,8 @@ const A = {
   clearGroups: () => { S.students.forEach(s => s.g = null); save(); render(); },
 
   // prof : partage
-  showFullQR: async () => {
-    const payload = await encodePacket(buildFull());
+  showFullQR: async d => {
+    const payload = await encodePacket(buildFull(d.light === '1'));
     const parts = chunkQR(payload, 'F');
     const m = modal(`<div id="qr-modal"></div><div class="btn-row" style="justify-content:center;margin-top:10px"><button class="btn primary" data-close>Fermer</button></div>`, { wide:true });
     m.querySelector('[data-close]').onclick = closeModal;
@@ -1171,9 +1325,16 @@ document.addEventListener('input', e => {
    --------------------------------------------------------------------- */
 for (let n = 1; n <= S.settings.nbLessons; n++) lesson(n);
 computeNames();
+const verEl = document.getElementById('app-version'); if (verEl) verEl.textContent = 'Version ' + APP_VERSION;
 render();
+/* Mise à jour automatique : dès qu'une nouvelle version est publiée, l'appli se recharge toute seule */
 if ('serviceWorker' in navigator && location.protocol !== 'file:') {
-  window.addEventListener('load', () => navigator.serviceWorker.register('sw.js').catch(()=>{}));
+  const hadController = !!navigator.serviceWorker.controller;
+  let reloading = false;
+  navigator.serviceWorker.addEventListener('controllerchange', () => { if (hadController && !reloading) { reloading = true; location.reload(); } });
+  window.addEventListener('load', () => navigator.serviceWorker.register('sw.js', { updateViaCache:'none' })
+    .then(reg => { reg.update(); setInterval(() => reg.update(), 30*60*1000); document.addEventListener('visibilitychange', () => { if (!document.hidden) reg.update(); }); })
+    .catch(()=>{}));
 }
 if (navigator.storage && navigator.storage.persist) navigator.storage.persist().catch(()=>{});
 

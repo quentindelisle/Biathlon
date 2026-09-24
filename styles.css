@@ -11,7 +11,7 @@
 html,body{margin:0;padding:0}
 body{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;
   background:var(--bg);color:var(--ink);font-size:18px;line-height:1.35;
-  min-height:100vh;padding-bottom:calc(44px + var(--safe-b));-webkit-user-select:none;user-select:none}
+  min-height:100vh;padding-bottom:calc(60px + var(--safe-b));-webkit-user-select:none;user-select:none}
 input,textarea,select{-webkit-user-select:text;user-select:text;font:inherit;color:var(--ink)}
 button{font:inherit;cursor:pointer;touch-action:manipulation}
 h1,h2,h3{margin:0 0 10px;line-height:1.15}
@@ -34,7 +34,7 @@ main{padding:16px;max-width:1200px;margin:0 auto}
 /* ---------- Signature ---------- */
 #signature{position:fixed;right:10px;bottom:calc(6px + var(--safe-b));z-index:30;
   background:rgba(255,255,255,.95);border:2px solid var(--navy);color:var(--navy);
-  border-radius:999px;padding:4px 12px;font-size:13px;pointer-events:none}
+  border-radius:14px;padding:3px 12px;font-size:13px;pointer-events:none;text-align:right;line-height:1.25}
 
 /* ---------- Boutons ---------- */
 .btn{display:inline-flex;align-items:center;justify-content:center;gap:8px;min-height:52px;
@@ -207,7 +207,8 @@ input:focus,textarea:focus,select:focus{outline:4px solid var(--orange);outline-
 .qr-part{font-size:22px;font-weight:900}
 .scan-wrap{position:relative;max-width:520px;margin:0 auto}
 .scan-wrap video{width:100%;border-radius:14px;border:4px solid var(--navy);background:#000;display:block}
-.scan-frame{position:absolute;inset:14%;border:5px solid var(--orange);border-radius:14px;pointer-events:none}
+.scan-frame{position:absolute;top:5%;bottom:5%;left:50%;transform:translateX(-50%);aspect-ratio:1/1;border:5px solid var(--orange);border-radius:14px;pointer-events:none;box-shadow:0 0 0 2000px rgba(0,0,0,.25)}
+.scan-wrap{overflow:hidden;border-radius:14px}
 .progress{height:18px;background:var(--line);border-radius:999px;overflow:hidden}
 .progress>div{height:100%;background:var(--green);transition:width .2s}
 
@@ -263,3 +264,37 @@ input[type=range]::-moz-range-thumb{width:30px;height:30px;border-radius:50%;bac
 .legend span{display:inline-flex;align-items:center;gap:6px}
 .legend i{width:22px;height:18px;border-radius:5px;border:2px solid rgba(10,22,51,.3);display:inline-block}
 select[disabled]{opacity:.7}
+
+/* Saisie : colonne cible à gauche (10 %) */
+.entry-name{display:flex;align-items:center;gap:12px;background:#fff;border:3px solid var(--navy);border-radius:var(--radius);padding:8px 12px 8px 24px;position:relative;overflow:hidden;flex-wrap:wrap}
+.entry-name .band{position:absolute;left:0;top:0;bottom:0;width:14px}
+.entry-name .who{font-size:28px;font-weight:900}
+.entry-sec{display:grid;grid-template-columns:10% 1fr;gap:12px;margin-top:16px;align-items:start}
+.sec-main h2{margin-top:4px}
+.tcol{position:sticky;top:86px;background:#fff;border:4px solid var(--blue);border-radius:14px;padding:8px 2px;text-align:center;min-width:0;overflow:hidden}
+.tcol-b{border-color:var(--orange)}
+.tcol .ico{font-size:30px;line-height:1.1}
+.tcol .lbl{font-size:12px;font-weight:900;color:var(--grey);letter-spacing:.02em}
+.tcol .v{font-size:40px;font-weight:900;color:var(--blue);line-height:1}
+.tcol-b .v{color:var(--orange)}
+.tcol .dist{font-size:17px;font-weight:900;margin-top:6px;color:var(--ink)}
+.tcol small{display:block;font-size:13px;font-weight:800;color:var(--ink)}
+.tcol .tag{margin-top:6px;font-size:11px;padding:1px 4px}
+.dial-card.dial-s{border-color:var(--blue);background:#F3F7FF}
+.dial-card.dial-b{border-color:var(--orange);background:#FFF6EC}
+.dial-card h3 .big-ico{font-size:30px;vertical-align:middle}
+.sec-main .dials{grid-template-columns:repeat(auto-fill,minmax(220px,1fr))}
+@media (max-width:640px){ .entry-sec{grid-template-columns:78px 1fr} .tcol .v{font-size:32px} }
+/* QR */
+.qr-box img{width:min(560px,92vw)!important;padding:0!important}
+.qr-nums{display:flex;flex-wrap:wrap;gap:6px;justify-content:center}
+.qr-nums button{width:44px;height:44px;border-radius:10px;border:3px solid var(--navy);background:#fff;font-weight:900;font-size:17px}
+.qr-nums button.on{background:var(--orange);border-color:var(--orange);color:#fff}
+.scan-parts{display:flex;flex-wrap:wrap;gap:6px;justify-content:center;margin-bottom:6px}
+.scan-parts span{width:40px;height:40px;border-radius:10px;border:3px solid var(--line);display:flex;align-items:center;justify-content:center;font-weight:900}
+.scan-parts span.ok{background:var(--green);border-color:var(--green);color:#fff}
+
+.dial-tgt{font-weight:900;color:var(--orange);font-size:16px;margin:-4px 0 4px}
+#app-version{position:fixed;left:10px;bottom:calc(6px + var(--safe-b));z-index:30;background:rgba(255,255,255,.95);border:2px solid var(--navy);
+  color:var(--navy);border-radius:999px;padding:3px 12px;font-size:13px!important;font-weight:900!important;pointer-events:none}
+.dial.big{width:255px;height:255px;max-width:100%}
