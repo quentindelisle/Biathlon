@@ -1,9 +1,9 @@
 /* Service worker – Biathlon 5 s – N'EPS numérique – Quentin Delisle et Gwilherm Rocher
    Réseau d'abord (toujours la dernière version quand on est connecté), cache si hors-ligne. */
-const CACHE = 'biathlon5s-v3.2.0';
+const CACHE = 'biathlon5s-v4.0.0';
 const ASSETS = ['./', './index.html', './styles.css', './app.js', './manifest.webmanifest', './logo-app.png',
   './icons/icon-180.png', './icons/icon-192.png', './icons/icon-512.png', './icons/icon-maskable-512.png',
-  './lib/qrcode.js', './lib/jsQR.js', './lib/xlsx.full.min.js'];
+  './lib/qrcode.js', './lib/jsQR.js', './lib/zxing-reader.js', './lib/zxing_reader.wasm', './lib/xlsx.full.min.js'];
 self.addEventListener('install', e => {
   e.waitUntil(caches.open(CACHE).then(c => Promise.all(ASSETS.map(u => fetch(u, { cache:'reload' }).then(r => r.ok && c.put(u, r)).catch(()=>{})))).then(() => self.skipWaiting()));
 });

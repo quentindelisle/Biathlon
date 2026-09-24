@@ -9,7 +9,7 @@
    ===================================================================== */
 'use strict';
 
-const APP_VERSION = '3.2.0';
+const APP_VERSION = '4.0.0';
 const STORE_KEY = 'neps_biathlon5s_v2';
 const QR_CHUNK = 440;           // caractères base45 par QR (QR version 11 max : facile à lire par une caméra)
 
@@ -715,15 +715,16 @@ function bindGroups(){
   });
 }
 function profPartage(){
-  return `<div class="card strong"><h2>1 · Envoyer la leçon aux tablettes</h2>
-      <div class="btn-row"><button class="btn primary" data-action="showFullQR" data-light="1">📤 QR léger : leçon ${curLesson()} (conseillé)</button>
-      <button class="btn" data-action="showFullQR" data-light="0">📤 QR complet (+ historique pour les statistiques)</button></div>
-      </div>
-    <div class="card strong"><h2>2 · Récupérer les saisies des tablettes</h2>
+  return `<div class="card strong"><h2>1 · QR « Élèves »</h2>
+      <button class="btn primary" data-action="showQR" data-kind="N">📤 Afficher le QR Élèves</button></div>
+    <div class="card strong"><h2>2 · QR « Leçon ${curLesson()} »</h2>
+      <button class="btn primary" data-action="showQR" data-kind="L">📤 Afficher le QR Leçon ${curLesson()}</button></div>
+    <div class="card strong"><h2>3 · Récupérer les saisies</h2>
       <button class="btn orange" data-action="scanResults">📷 Scanner une tablette</button></div>
-    <div class="card"><h2>Sans caméra : par fichier (AirDrop, Partage à proximité, mail…)</h2><div class="btn-row">
-      <button class="btn" data-action="fileFull">📤 Partager la leçon en fichier</button>
-      <label class="btn">📂 Importer un fichier (.json)<input type="file" id="file-sync" accept=".json,application/json" hidden></label></div></div>`;
+    <div class="card"><h2>Autres options</h2><div class="btn-row">
+      <button class="btn" data-action="showFullQR" data-light="0">Historique complet (plusieurs QR)</button>
+      <button class="btn" data-action="fileFull">📤 Partager en fichier</button>
+      <label class="btn">📂 Importer un fichier<input type="file" id="file-sync" accept=".json,application/json" hidden></label></div></div>`;
 }
 function profExport(){
   return `<div class="card strong"><h2>Export Excel</h2>
@@ -912,12 +913,122 @@ async function applyPacket(p){
     go('home');
     return n;
   }
+  if (p.k === 'names') {
+    if (S.students.some(s => s.nom)) {
+      const ok = await confirmBox('Remplacer la liste de cet appareil ?', 'Cet appareil contient la liste complète (enseignant).', 'Remplacer', true);
+      if (!ok) return;
+    }
+    S.students = p.students.map(s => ({ id:s.id, disp:s.disp, g:s.g }));
+    if (p.className != null) S.settings.className = p.className;
+    save(); toast(`✓ ${S.students.length} élèves reçus`, 3000);
+    return 'continue';
+  }
+  if (p.k === 'lesson') {
+    const list = S.students;                      // même ordre que le QR « Élèves »
+    if (!list.length || listHash(list.map(s => s.id)) !== p.hash) { toast('⚠️ Scannez d\'abord le QR « Élèves »', 4000); throw new Error('Liste des élèves différente'); }
+    const pin = S.settings.pin; S.settings = { ...S.settings, ...p.settings, pin };
+    const L = lesson(p.settings.current);
+    L.title = p.title; L.nbCourses = p.nbC; L.nbTirs = p.nbT;
+    L.fixedS = {}; L.fixedB = {}; L.manual = {}; L.manualB = {}; L.adjust = {}; L.adjustB = {}; L.att = {};
+    list.forEach((s, i) => { const r = p.rows[i]; if (!r) return;
+      if (r.tS != null) L.fixedS[s.id] = r.tS; if (r.tB != null) L.fixedB[s.id] = r.tB;
+      if (r.aS) L.adjust[s.id] = r.aS; if (r.aB) L.adjustB[s.id] = r.aB; if (r.att) L.att[s.id] = r.att; s.g = r.g; });
+    save(); toast(`✓ Leçon ${p.settings.current} reçue`, 3000); go('home');
+    return 1;
+  }
   if (p.k === 'res') {
     const n = mergeData(p.results, p.projects);
     save(); toast(`✓ Tablette ${p.from} : ${n} saisie(s) nouvelle(s) ou mise(s) à jour`, 3500);
     return n;
   }
   throw new Error('Type de données inconnu');
+}
+
+/* =====================================================================
+   Format binaire compact (v4) : QR très petits, faciles à lire
+   N = liste des élèves (une fois par cycle) · L = leçon du jour · R = saisies d'une tablette
+   ===================================================================== */
+function BW(){ const b = []; return {
+  u8(v){ b.push((v ?? 0) & 255); }, u16(v){ b.push((v>>8)&255, v&255); },
+  u32(v){ b.push((v>>>24)&255, (v>>>16)&255, (v>>>8)&255, v&255); },
+  id(s){ const t = String(s||'').padEnd(4,' ').slice(0,4); for (let i = 0; i < 4; i++) b.push(t.charCodeAt(i) & 255); },
+  str(s, max=255){ let u = new TextEncoder().encode(String(s||'')); if (u.length > max) u = u.slice(0, max);
+    if (max > 255) this.u16(u.length); else b.push(u.length); u.forEach(x => b.push(x)); },
+  bytes(){ return new Uint8Array(b); } }; }
+function BR(u){ let i = 0; return {
+  u8(){ return u[i++]; }, u16(){ const v = (u[i]<<8)|u[i+1]; i += 2; return v; },
+  u32(){ const v = ((u[i]<<24)>>>0) + (u[i+1]<<16) + (u[i+2]<<8) + u[i+3]; i += 4; return v; },
+  id(){ let t = ''; for (let k = 0; k < 4; k++) t += String.fromCharCode(u[i++]); return t.trim(); },
+  str(long=false){ const n = long ? this.u16() : u[i++]; const t = new TextDecoder().decode(u.slice(i, i+n)); i += n; return t; },
+  end(){ return i >= u.length; } }; }
+function listHash(ids){ let h = 0x811c9dc5; for (const c of ids.join(',')) { h ^= c.charCodeAt(0); h = Math.imul(h, 16777619) >>> 0; } return h >>> 0; }
+const GIDX = k => { const i = COLORS.findIndex(c => c.k === k); return i < 0 ? 0 : i + 1; };
+const GKEY = i => i ? COLORS[i-1]?.k || null : null;
+const NUL = 255, nv = v => v == null ? NUL : Math.max(0, Math.min(254, v)), vn = v => v === NUL ? null : v;
+
+function binNames(){
+  const w = BW(); w.u8('N'.charCodeAt(0)); w.u8(1);
+  w.str(S.settings.className, 60); w.u8(S.students.length);
+  sortedStudents().forEach(s => { w.id(s.id); w.u8(GIDX(s.g)); w.str(nameOf(s.id), 40); });
+  return w.bytes();
+}
+function binLesson(){
+  const cur = curLesson(), L = lesson(cur), st = S.settings, list = sortedStudents();
+  const w = BW(); w.u8('L'.charCodeAt(0)); w.u8(1);
+  w.u32(listHash(list.map(s => s.id)));
+  [st.nbLessons, cur, st.baseCourses, st.baseTirs, st.plotsS, st.plotsB, st.ecartS, st.ecartB, nbAtt(cur,'s'), nbAtt(cur,'b')].forEach(v => w.u8(v));
+  w.str(L.title, 80); w.u8(list.length);
+  list.forEach(s => {
+    const aS = +(L.adjust[s.id]||0), aB = +(L.adjustB[s.id]||0), at = attOf(cur, s.id);
+    w.u8(nv(baseTarget(cur, s.id, 's'))); w.u8(nv(baseTarget(cur, s.id, 'b')));
+    w.u8((aS<0?1:aS>0?2:0) | ((aB<0?1:aB>0?2:0)<<2) | ((at==='abs'?1:at==='inap'?2:0)<<4));
+    w.u8(GIDX(s.g));
+  });
+  return w.bytes();
+}
+function binResults(){
+  const w = BW(); w.u8('R'.charCodeAt(0)); w.u8(1); w.id(S.deviceId);
+  const ents = [], projs = [];
+  Object.entries(S.results).forEach(([n, byS]) => Object.entries(byS).forEach(([sid, r]) => { if (r.d === S.deviceId) ents.push([+n, sid, r]); }));
+  Object.entries(S.projects).forEach(([sid, p]) => { if (p.d === S.deviceId) projs.push([sid, p]); });
+  w.u16(ents.length);
+  ents.forEach(([n, sid, r]) => { w.id(sid); w.u8(n); w.u32(Math.floor((r.ts||0)/1000));
+    const c = r.c||[], b = r.b||[]; w.u8(c.length); c.forEach(v => w.u8(nv(v))); w.u8(b.length); b.forEach(v => w.u8(nv(v))); });
+  w.u8(projs.length);
+  projs.forEach(([sid, p]) => { w.id(sid); w.u8(nv(p.cibleS)); w.u8(nv(p.cibleB)); w.u32(Math.floor((p.ts||0)/1000)); w.str(p.texte||'', 600); });
+  return { bytes: w.bytes(), count: ents.length + projs.length };
+}
+function binDecode(u){
+  const r = BR(u), t = String.fromCharCode(r.u8()); r.u8();
+  if (t === 'N') {
+    const className = r.str(), n = r.u8(), students = [];
+    for (let i = 0; i < n; i++) { const id = r.id(), g = GKEY(r.u8()), disp = r.str(); students.push({ id, disp, g }); }
+    return { k:'names', className, students };
+  }
+  if (t === 'L') {
+    const hash = r.u32(); const v = []; for (let i = 0; i < 10; i++) v.push(r.u8());
+    const title = r.str(), n = r.u8(), rows = [];
+    for (let i = 0; i < n; i++) { const tS = vn(r.u8()), tB = vn(r.u8()), f = r.u8(), g = GKEY(r.u8());
+      rows.push({ tS, tB, aS: [0,-1,1][f&3], aB: [0,-1,1][(f>>2)&3], att: [null,'abs','inap'][(f>>4)&3], g }); }
+    const [nbLessons, current, baseCourses, baseTirs, plotsS, plotsB, ecartS, ecartB, nbC, nbT] = v;
+    return { k:'lesson', hash, settings:{ nbLessons, current, baseCourses, baseTirs, plotsS, plotsB, ecartS, ecartB }, nbC, nbT, title, rows };
+  }
+  if (t === 'R') {
+    const from = r.id(), n = r.u16(), results = {}, projects = {};
+    for (let i = 0; i < n; i++) { const sid = r.id(), les = r.u8(), ts = r.u32()*1000;
+      const nc = r.u8(), c = []; for (let k = 0; k < nc; k++) c.push(vn(r.u8()));
+      const nb = r.u8(), b = []; for (let k = 0; k < nb; k++) b.push(vn(r.u8()));
+      (results[les] = results[les] || {})[sid] = { c, b, ts, d: from }; }
+    const np = r.u8();
+    for (let i = 0; i < np; i++) { const sid = r.id(), cS = vn(r.u8()), cB = vn(r.u8()), ts = r.u32()*1000, texte = r.str(true);
+      projects[sid] = { cibleS:cS, cibleB:cB, texte, ts, d: from }; }
+    return { k:'res', from, results, projects };
+  }
+  throw new Error('QR inconnu');
+}
+async function encodeBin(u8){
+  if (window.CompressionStream) { try { const z = await streamBytes(u8, new CompressionStream('deflate-raw')); if (z.length < u8.length) return 'Y' + b45enc(z); } catch(e){} }
+  return 'X' + b45enc(u8);
 }
 
 /* Compactage des résultats pour des QR codes plus petits */
@@ -979,6 +1090,8 @@ async function decodePacket(str){
     if (str[0] === 'z') raw = await streamBytes(raw, new DecompressionStream('deflate-raw'));
     return JSON.parse(new TextDecoder().decode(raw));
   }
+  if (str[0] === 'X') return binDecode(b45dec(str.slice(1)));
+  if (str[0] === 'Y') return binDecode(await streamBytes(b45dec(str.slice(1)), new DecompressionStream('deflate-raw')));
   const flag = str[0], bytes = b45dec(str.slice(1));
   let raw = bytes;
   if (flag === 'Z') {
@@ -987,9 +1100,9 @@ async function decodePacket(str){
   }
   return unpackPacket(JSON.parse(new TextDecoder().decode(raw)));
 }
-function chunkQR(payload, type){
+function chunkQR(payload, type, max=QR_CHUNK){
   const id = rnd(3).toUpperCase(), parts = [];
-  const n = Math.max(1, Math.ceil(payload.length / QR_CHUNK));
+  const n = Math.max(1, Math.ceil(payload.length / max));
   const per = Math.ceil(payload.length / n);          // morceaux égaux = QR les moins denses possible
   for (let i = 0; i < n; i++) parts.push(`B5:${type}:${id}:${i+1}:${n}:` + payload.slice(i*per, (i+1)*per));
   return parts;
@@ -1048,7 +1161,7 @@ function stopScan(){
   if (scan.stream) scan.stream.getTracks().forEach(t => t.stop());
   scan = null;
 }
-let nativeDetector;
+let nativeDetector, scanCamIdx = 0, scanCamId = null;
 async function getNativeDetector(){
   if (nativeDetector !== undefined) return nativeDetector;
   nativeDetector = null;
@@ -1088,10 +1201,35 @@ function jsqrOn(ctx, w, h, both){
   const c = jsQR(img.data, w, h, { inversionAttempts: both ? 'attemptBoth' : 'dontInvert' });
   return c && c.data ? c.data : null;
 }
+/* Lecteur ZXing (moteur de lecture professionnel, compilé en WebAssembly, embarqué dans l'appli) */
+let zxReady = false;
+try {
+  if (window.ZXingWASM) ZXingWASM.prepareZXingModule({ overrides:{ locateFile:(path, prefix) => path.endsWith('.wasm') ? new URL('lib/' + path, document.baseURI).href : prefix + path }, fireImmediately:true })
+    .then(() => { zxReady = true; }).catch(e => console.warn('ZXing', e));
+} catch(e){}
+async function zxRead(imgData){
+  if (!zxReady) return null;
+  try { const r = await ZXingWASM.readBarcodes(imgData, { formats:['QRCode'], tryHarder:true, maxNumberOfSymbols:1 });
+    const ok = r.find(x => x.isValid && x.text); return ok ? ok.text : null; } catch(e){ return null; }
+}
 async function decodeImageSource(src, sw, sh, cv, ctx, frame, all=false){
   const det = await getNativeDetector();
   if (det) { try { const r = await det.detect(src); if (r && r.length) return r.map(x => x.rawValue); } catch(e){} }
   const side = Math.min(sw, sh) * 0.92, sx = (sw - side)/2, sy = (sh - side)/2;
+  if (zxReady) {
+    // ZXing : cadre central, puis image entière de temps en temps
+    const k = Math.min(1, 1000 / side), w = Math.round(side*k);
+    cv.width = w; cv.height = w; ctx.drawImage(src, sx, sy, side, side, 0, 0, w, w);
+    let t = await zxRead(ctx.getImageData(0, 0, w, w));
+    if (t) return [t];
+    if (all || frame % 3 === 2) {
+      const k2 = Math.min(1, 1280 / Math.max(sw, sh)), w2 = Math.round(sw*k2), h2 = Math.round(sh*k2);
+      cv.width = w2; cv.height = h2; ctx.drawImage(src, 0, 0, sw, sh, 0, 0, w2, h2);
+      t = await zxRead(ctx.getImageData(0, 0, w2, h2));
+      if (t) return [t];
+    }
+    if (!all && frame % 2 === 0) return [];        // une image sur deux : aussi jsQR (ci-dessous)
+  }
   const G = grabGray(ctx, cv, src, sx, sy, side, side, 1100);
   const scales = all ? SCAN_SCALES : [SCAN_SCALES[frame % SCAN_SCALES.length], SCAN_SCALES[(frame+3) % SCAN_SCALES.length]];
   for (const f of scales) {
@@ -1110,7 +1248,7 @@ async function startScan(container, expectType, onDone){
     <div style="max-width:560px;margin:12px auto">
       <div class="scan-parts"></div>
       <p class="center" style="font-weight:900;font-size:20px" id="scan-msg">Démarrage de la caméra…</p>
-      <div class="btn-row" style="justify-content:center"><label class="btn">📷 Prendre le QR en photo<input type="file" accept="image/*" capture="environment" hidden class="scan-photo"></label></div></div>`;
+      <div class="btn-row" style="justify-content:center"><button class="btn" data-cam>🔄 Caméra</button><label class="btn">📷 Photo du QR<input type="file" accept="image/*" capture="environment" hidden class="scan-photo"></label></div></div>`;
   const video = container.querySelector('video'), msg = container.querySelector('#scan-msg'), partsEl = container.querySelector('.scan-parts');
   const me = scan = { stopped:false, parts:{}, id:null, n:0, frame:0 };
   const cv = document.createElement('canvas'), ctx = cv.getContext('2d', { willReadFrequently:true });
@@ -1120,7 +1258,9 @@ async function startScan(container, expectType, onDone){
     for (const txt of texts) {
       const pt = parsePart(txt);
       if (!pt) { msg.textContent = 'QR non reconnu (ce n\'est pas un QR de l\'appli Biathlon).'; continue; }
-      if (expectType && pt.type !== expectType) { msg.textContent = pt.type === 'F' ? 'Ceci est un QR de leçon (prof), pas une saisie de tablette.' : 'Ceci est un QR de saisies (tablette), pas une leçon.'; continue; }
+      const okTypes = [].concat(expectType || []);
+      if (okTypes.length && !okTypes.includes(pt.type)) { msg.textContent = pt.type === 'R' ? 'QR de saisies (tablette) : à scanner par l\'enseignant.' : 'QR de l\'enseignant : à scanner sur les tablettes.'; continue; }
+      if (pt.id === me.doneId) continue;            // QR déjà traité (encore devant la caméra)
       if (me.id !== pt.id) { me.id = pt.id; me.parts = {}; me.n = pt.n; }
       if (!me.parts[pt.i]) { me.parts[pt.i] = pt.data; if (navigator.vibrate) navigator.vibrate(40); }
       const got = Object.keys(me.parts).length;
@@ -1130,9 +1270,13 @@ async function startScan(container, expectType, onDone){
       if (got === me.n && !finished) {
         finished = true;
         const payload = Array.from({length: me.n}, (_, k) => me.parts[k+1]).join('');
-        stopScan();
-        try { await onDone(await decodePacket(payload)); }
-        catch(e) { console.error(e); toast('⚠️ ' + e.message, 3500); }
+        me.doneId = me.id; me.id = null; me.parts = {};
+        let r;
+        try { r = await onDone(await decodePacket(payload)); }
+        catch(e) { console.warn(e); toast('⚠️ ' + e.message, 3500); r = 'continue'; }
+        if (r === 'continue' && scan === me && !me.stopped) {     // la caméra reste allumée pour le QR suivant
+          finished = false; showParts(); msg.textContent = '✓ Reçu'; me.timer = setTimeout(tick, 400);
+        } else if (scan === me) stopScan();
         return;
       }
     }
@@ -1151,8 +1295,15 @@ async function startScan(container, expectType, onDone){
   if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
     msg.innerHTML = '⚠️ Caméra en direct indisponible ici (l\'appli doit être ouverte en https). Utilisez « Prendre le QR en photo ».'; return;
   }
+  container.querySelector('[data-cam]').onclick = async () => {
+    try { const cams = (await navigator.mediaDevices.enumerateDevices()).filter(d => d.kind === 'videoinput');
+      if (cams.length < 2) return toast('Une seule caméra');
+      scanCamIdx = (scanCamIdx + 1) % cams.length; scanCamId = cams[scanCamIdx].deviceId;
+      startScan(container, expectType, onDone); } catch(e){}
+  };
   try {
-    me.stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: { ideal:'environment' }, width:{ ideal:1920 }, height:{ ideal:1080 } }, audio:false });
+    const vc = scanCamId ? { deviceId:{ exact: scanCamId }, width:{ ideal:1920 }, height:{ ideal:1080 } } : { facingMode:{ ideal:'environment' }, width:{ ideal:1920 }, height:{ ideal:1080 } };
+    me.stream = await navigator.mediaDevices.getUserMedia({ video: vc, audio:false });
   } catch(e) {
     msg.innerHTML = '⚠️ Caméra refusée ou occupée. Autorisez la caméra pour ce site (Réglages → Safari → Appareil photo) ou utilisez « Prendre le QR en photo ».';
     return;
@@ -1182,17 +1333,16 @@ function viewSend(){
     <div class="btn-row" style="justify-content:center;margin-top:12px"><button class="btn" data-action="fileMine">📤 Partager en fichier (AirDrop…) à la place</button></div>`;
 }
 async function afterSend(){
-  const { pkt } = buildMine();
-  const payload = await encodePacket(pkt);
+  const payload = await encodeBin(binResults().bytes);
   const area = $('#qr-area'); if (!area) return;
-  showQRSeries(chunkQR(payload, 'R'), area, '');
+  showQRSeries(chunkQR(payload, 'R', 260), area, '');
 }
 function viewReceive(){
   return `<div class="card strong center"><b style="font-size:20px">Scannez le QR « leçon » affiché par l'enseignant</b></div>
     <div id="scan-area"></div>
     <div class="btn-row" style="justify-content:center;margin-top:12px"><label class="btn">📂 Importer un fichier (.json)<input type="file" id="file-sync" accept=".json,application/json" hidden></label></div>`;
 }
-function afterReceive(){ startScan($('#scan-area'), 'F', p => applyPacket(p)); }
+function afterReceive(){ startScan($('#scan-area'), ['F','N','L'], p => applyPacket(p)); }
 
 async function downloadJSON(obj, name){
   const blob = new Blob([JSON.stringify(obj)], { type:'application/json' });
@@ -1270,6 +1420,13 @@ const A = {
   clearGroups: () => { S.students.forEach(s => s.g = null); save(); render(); },
 
   // prof : partage
+  showQR: async d => {
+    const bytes = d.kind === 'N' ? binNames() : binLesson();
+    const parts = chunkQR(await encodeBin(bytes), d.kind, 260);
+    const m = modal(`<div id="qr-modal"></div><div class="btn-row" style="justify-content:center;margin-top:10px"><button class="btn primary" data-close>Fermer</button></div>`, { wide:true });
+    m.querySelector('[data-close]').onclick = closeModal;
+    showQRSeries(parts, m.querySelector('#qr-modal'), d.kind === 'N' ? 'Élèves' : `Leçon ${curLesson()}`);
+  },
   showFullQR: async d => {
     const payload = await encodePacket(buildFull(d.light === '1'));
     const parts = chunkQR(payload, 'F');
@@ -1280,8 +1437,7 @@ const A = {
   scanResults: () => {
     const m = modal(`<h2>Scanner une tablette</h2><div id="scan-modal"></div><div class="btn-row" style="justify-content:center;margin-top:10px"><button class="btn primary" data-close>Terminer</button></div>`, { wide:true });
     m.querySelector('[data-close]').onclick = () => { closeModal(); render(); };
-    const again = () => startScan(m.querySelector('#scan-modal'), 'R', async p => { await applyPacket(p); setTimeout(() => { if (document.body.contains(m)) again(); }, 1200); });
-    again();
+    startScan(m.querySelector('#scan-modal'), 'R', async p => { await applyPacket(p); return 'continue'; });
   },
   fileFull: () => downloadJSON(buildFull(), `Biathlon5s_lecon${curLesson()}.json`),
   fileMine: () => downloadJSON(buildMine().pkt, `Biathlon5s_saisies_${S.deviceId}.json`),
