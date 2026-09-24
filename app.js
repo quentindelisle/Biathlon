@@ -9,7 +9,7 @@
    ===================================================================== */
 'use strict';
 
-const APP_VERSION = '4.0.0';
+const APP_VERSION = '4.1.0';
 const STORE_KEY = 'neps_biathlon5s_v2';
 const QR_CHUNK = 440;           // caractères base45 par QR (QR version 11 max : facile à lire par une caméra)
 
@@ -1207,9 +1207,9 @@ try {
   if (window.ZXingWASM) ZXingWASM.prepareZXingModule({ overrides:{ locateFile:(path, prefix) => path.endsWith('.wasm') ? new URL('lib/' + path, document.baseURI).href : prefix + path }, fireImmediately:true })
     .then(() => { zxReady = true; }).catch(e => console.warn('ZXing', e));
 } catch(e){}
-async function zxRead(imgData){
+async function zxRead(imgData, hard=true){
   if (!zxReady) return null;
-  try { const r = await ZXingWASM.readBarcodes(imgData, { formats:['QRCode'], tryHarder:true, maxNumberOfSymbols:1 });
+  try { const r = await ZXingWASM.readBarcodes(imgData, { formats:['QRCode'], tryHarder:hard, maxNumberOfSymbols:1 });
     const ok = r.find(x => x.isValid && x.text); return ok ? ok.text : null; } catch(e){ return null; }
 }
 async function decodeImageSource(src, sw, sh, cv, ctx, frame, all=false){
@@ -1218,9 +1218,9 @@ async function decodeImageSource(src, sw, sh, cv, ctx, frame, all=false){
   const side = Math.min(sw, sh) * 0.92, sx = (sw - side)/2, sy = (sh - side)/2;
   if (zxReady) {
     // ZXing : cadre central, puis image entière de temps en temps
-    const k = Math.min(1, 1000 / side), w = Math.round(side*k);
+    const k = Math.min(1, (all ? 1000 : 800) / side), w = Math.round(side*k);
     cv.width = w; cv.height = w; ctx.drawImage(src, sx, sy, side, side, 0, 0, w, w);
-    let t = await zxRead(ctx.getImageData(0, 0, w, w));
+    let t = await zxRead(ctx.getImageData(0, 0, w, w), all || frame % 3 !== 1);
     if (t) return [t];
     if (all || frame % 3 === 2) {
       const k2 = Math.min(1, 1280 / Math.max(sw, sh)), w2 = Math.round(sw*k2), h2 = Math.round(sh*k2);
@@ -1248,7 +1248,8 @@ async function startScan(container, expectType, onDone){
     <div style="max-width:560px;margin:12px auto">
       <div class="scan-parts"></div>
       <p class="center" style="font-weight:900;font-size:20px" id="scan-msg">Démarrage de la caméra…</p>
-      <div class="btn-row" style="justify-content:center"><button class="btn" data-cam>🔄 Caméra</button><label class="btn">📷 Photo du QR<input type="file" accept="image/*" capture="environment" hidden class="scan-photo"></label></div></div>`;
+      <div class="btn-row" style="justify-content:center"><button class="btn" data-cam>🔄 Caméra</button><label class="btn orange">📷 Photo du QR<input type="file" accept="image/*" capture="environment" hidden class="scan-photo"></label></div>
+      <p class="center" id="scan-diag" style="font-size:12px;color:var(--grey);margin-top:8px"></p></div>`;
   const video = container.querySelector('video'), msg = container.querySelector('#scan-msg'), partsEl = container.querySelector('.scan-parts');
   const me = scan = { stopped:false, parts:{}, id:null, n:0, frame:0 };
   const cv = document.createElement('canvas'), ctx = cv.getContext('2d', { willReadFrequently:true });
@@ -1293,34 +1294,68 @@ async function startScan(container, expectType, onDone){
     } catch(err) { msg.textContent = '⚠️ Photo illisible'; }
   });
   if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
-    msg.innerHTML = '⚠️ Caméra en direct indisponible ici (l\'appli doit être ouverte en https). Utilisez « Prendre le QR en photo ».'; return;
+    msg.innerHTML = '⚠️ Caméra indisponible : utilisez 📷 Photo du QR.'; return;
   }
+  const diag = container.querySelector('#scan-diag');
   container.querySelector('[data-cam]').onclick = async () => {
     try { const cams = (await navigator.mediaDevices.enumerateDevices()).filter(d => d.kind === 'videoinput');
       if (cams.length < 2) return toast('Une seule caméra');
       scanCamIdx = (scanCamIdx + 1) % cams.length; scanCamId = cams[scanCamIdx].deviceId;
       startScan(container, expectType, onDone); } catch(e){}
   };
-  try {
-    const vc = scanCamId ? { deviceId:{ exact: scanCamId }, width:{ ideal:1920 }, height:{ ideal:1080 } } : { facingMode:{ ideal:'environment' }, width:{ ideal:1920 }, height:{ ideal:1080 } };
-    me.stream = await navigator.mediaDevices.getUserMedia({ video: vc, audio:false });
-  } catch(e) {
-    msg.innerHTML = '⚠️ Caméra refusée ou occupée. Autorisez la caméra pour ce site (Réglages → Safari → Appareil photo) ou utilisez « Prendre le QR en photo ».';
+  // Plusieurs réglages essayés dans l'ordre (certains appareils donnent une image noire en haute résolution)
+  const attempts = scanCamId
+    ? [{ deviceId:{ exact: scanCamId } }]
+    : [{ facingMode:'environment' }, { facingMode:{ ideal:'environment' }, width:{ ideal:1280 }, height:{ ideal:720 } }, true];
+  let lastErr = null;
+  for (const vc of attempts) {
+    try { me.stream = await navigator.mediaDevices.getUserMedia({ video: vc, audio:false }); break; }
+    catch(e) { lastErr = e; }
+  }
+  if (!me.stream) {
+    const n = lastErr && lastErr.name;
+    msg.innerHTML = n === 'NotAllowedError' ? '⚠️ Caméra refusée : autorisez la caméra pour ce site dans les réglages, ou utilisez 📷 Photo du QR.'
+      : '⚠️ Caméra impossible à ouvrir (' + esc(n || 'erreur') + ') : utilisez 📷 Photo du QR.';
     return;
   }
   if (me.stopped) { me.stream.getTracks().forEach(t=>t.stop()); return; }
   const track = me.stream.getVideoTracks()[0];
   try { await track.applyConstraints({ advanced:[{ focusMode:'continuous' }] }); } catch(e){}
-  video.setAttribute('playsinline', ''); video.muted = true;
-  video.srcObject = me.stream; try { await video.play(); } catch(e){}
+  video.setAttribute('playsinline', ''); video.setAttribute('muted', ''); video.muted = true; video.autoplay = true;
+  video.srcObject = me.stream;
+  const playIt = () => video.play().catch(()=>{});
+  video.onloadedmetadata = playIt; playIt();
   msg.textContent = 'Visez le QR code…';
+  const reader = () => nativeDetector ? 'lecteur Android' : zxReady ? 'lecteur ZXing' : 'lecteur jsQR';
+  const t0 = Date.now(); let lastDiag = 0, decodes = 0, dark = 0, switched = false;
+  const probe = document.createElement('canvas'), pctx = probe.getContext('2d', { willReadFrequently:true }); probe.width = 32; probe.height = 18;
   const tick = async () => {
     if (me.stopped || finished) return;
+    const now = Date.now();
     if (video.readyState >= 2 && video.videoWidth) {
       me.frame++;
-      try { const r = await decodeImageSource(video, video.videoWidth, video.videoHeight, cv, ctx, me.frame); if (r.length) await handle(r); } catch(e){ console.warn(e); }
+      // image noire ? (mauvais objectif sur certains appareils) → on passe à une autre caméra
+      if (me.frame % 10 === 1) {
+        pctx.drawImage(video, 0, 0, 32, 18); const d = pctx.getImageData(0, 0, 32, 18).data; let m = 0;
+        for (let i = 0; i < d.length; i += 4) m += d[i] + d[i+1] + d[i+2]; m /= (d.length/4*3);
+        dark = m < 6 ? dark + 1 : 0;
+        if (dark >= 4 && !switched) { switched = true; toast('Image noire : autre caméra…');
+          try { const cams = (await navigator.mediaDevices.enumerateDevices()).filter(x => x.kind === 'videoinput');
+            if (cams.length > 1) { const cur = track.getSettings().deviceId; const i = cams.findIndex(c => c.deviceId === cur);
+              scanCamIdx = (i + 1) % cams.length; scanCamId = cams[scanCamIdx].deviceId; return startScan(container, expectType, onDone); } } catch(e){}
+          msg.textContent = '⚠️ Image noire : touchez 🔄 Caméra ou utilisez 📷 Photo du QR.'; }
+      }
+      try { const r = await decodeImageSource(video, video.videoWidth, video.videoHeight, cv, ctx, me.frame); decodes++; if (r.length) await handle(r); } catch(e){ console.warn(e); }
+    } else if (now - t0 > 4000 && me.frame === 0) {
+      msg.textContent = '⚠️ La caméra ne renvoie pas d\'image : touchez 🔄 Caméra ou utilisez 📷 Photo du QR.';
+      playIt();
     }
-    if (!me.stopped && !finished) me.timer = setTimeout(tick, 40);
+    if (diag && now - lastDiag > 1000) {
+      const el = (now - (lastDiag || t0)) / 1000;
+      diag.textContent = `Caméra ${video.videoWidth}×${video.videoHeight} · ${Math.round(decodes/el)} analyses/s · ${reader()} · v${APP_VERSION}`;
+      lastDiag = now; decodes = 0;
+    }
+    if (!me.stopped && !finished) me.timer = setTimeout(tick, 60);
   };
   tick();
 }
