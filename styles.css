@@ -157,9 +157,10 @@ input:focus,textarea:focus,select:focus{outline:4px solid var(--orange);outline-
 .entry-head{display:flex;align-items:center;gap:12px;background:#fff;border:3px solid var(--navy);border-radius:var(--radius);padding:12px 16px;margin-bottom:14px;position:relative;overflow:hidden}
 .entry-head .band{position:absolute;left:0;top:0;bottom:0;width:14px}
 .entry-head .who{font-size:30px;font-weight:900;padding-left:8px}
-.entry-head .tgt{margin-left:auto;text-align:right}
-.entry-head .tgt .v{font-size:34px;font-weight:900;color:var(--blue)}
-.dials{display:grid;grid-template-columns:repeat(auto-fill,minmax(210px,1fr));gap:14px}
+.entry-head .tgt{margin-left:auto;display:flex;gap:18px;flex-wrap:wrap;justify-content:flex-end;text-align:right}
+.tgt-box{min-width:150px}
+.entry-head .tgt .v{font-size:30px;font-weight:900;color:var(--blue);line-height:1.1}
+.dials{display:grid;grid-template-columns:repeat(auto-fill,minmax(235px,1fr));gap:14px}
 .dial-card{background:#fff;border:3px solid var(--navy);border-radius:var(--radius);padding:10px;text-align:center}
 .dial-card h3{margin:0 0 4px;font-size:19px}
 .dial{width:190px;height:190px;touch-action:none;display:block;margin:0 auto}
@@ -188,7 +189,9 @@ input:focus,textarea:focus,select:focus{outline:4px solid var(--orange);outline-
 .sc.s-lo{background:var(--red)} .sc.s-mid{background:var(--orange)} .sc.s-hi{background:var(--green)}
 .sc.s-dist{background:var(--navy)} .sc.s-none{background:#fff;color:var(--grey);border:2px dashed var(--line)}
 .bar-chart{display:flex;align-items:flex-end;gap:6px;height:110px;padding:6px 0;border-bottom:3px solid var(--navy);margin:30px 0 4px}
-.bar-chart .b{flex:1;background:var(--blue);border-radius:6px 6px 0 0;position:relative;min-height:2px}
+.bar-chart .col{flex:1;height:100%;position:relative}
+.bar-chart .b{position:absolute;left:0;right:0;bottom:0;background:var(--blue);border-radius:6px 6px 0 0;min-height:2px}
+.bar-chart .tl{position:absolute;left:-2px;right:-2px;height:0;border-top:4px dashed var(--orange);z-index:2}
 .bar-chart .b span{position:absolute;top:-22px;left:0;right:0;text-align:center;font-size:13px;font-weight:900}
 .bar-chart.green .b{background:var(--green)}
 .bar-labels{display:flex;gap:6px}.bar-labels span{flex:1;text-align:center;font-size:13px;font-weight:800;color:var(--grey)}
@@ -235,3 +238,19 @@ table.simple td,table.simple th{border-bottom:2px solid var(--line);padding:8px;
   .tile .name{font-size:19px}
 }
 @media (max-width:380px){ .tiles{grid-template-columns:1fr} }
+
+/* Cibles par épreuve */
+.tg-act{border-top:2px solid var(--line);padding-top:8px;margin-top:8px}
+.tg-act .tv{font-size:22px}
+.tg-h{font-weight:900;font-size:15px;color:var(--grey)}
+.tile .target{font-size:17px}
+/* Curseurs */
+.range-field{gap:4px}
+.range-field .rv{font-size:22px;color:var(--orange)}
+input[type=range]{width:100%;height:44px;accent-color:var(--orange);margin:0}
+input[type=range]::-webkit-slider-runnable-track{height:12px;border-radius:999px;background:#DCE2EE;border:2px solid var(--navy)}
+input[type=range]::-webkit-slider-thumb{-webkit-appearance:none;appearance:none;width:34px;height:34px;border-radius:50%;background:var(--orange);border:3px solid var(--navy);margin-top:-13px}
+input[type=range]{-webkit-appearance:none;appearance:none;background:transparent}
+input[type=range]::-moz-range-track{height:12px;border-radius:999px;background:#DCE2EE;border:2px solid var(--navy)}
+input[type=range]::-moz-range-thumb{width:30px;height:30px;border-radius:50%;background:var(--orange);border:3px solid var(--navy)}
+.dial{width:210px;height:210px}

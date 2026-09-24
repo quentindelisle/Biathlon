@@ -1,7 +1,7 @@
 {
   "name": "Biathlon 5 s – N'EPS numérique",
   "short_name": "Biathlon 5s",
-  "description": "Suivi de performance élèves – CA1 Biathlon course de 5 s / lancer long – By Quentin Delisle & Gwilherm Rocher",
+  "description": "Suivi de performance élèves – CA1 Biathlon course de 5 s / lancer long – Quentin Delisle et Gwilherm Rocher",
   "lang": "fr",
   "start_url": "./index.html",
   "scope": "./",
