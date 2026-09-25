@@ -4,27 +4,32 @@
    PWA hors-ligne : données stockées sur l'appareil (localStorage),
    échanges entre tablettes par QR codes.
    Mesure : 1 point par plot atteint.
-     Sprint 5 s : plot 1 = 15 km/h, plot 2 = 16 km/h … plot 11 = 25 km/h
+     Barème réglable (menu prof) : course = vitesse du 1er plot (+1 km/h par plot) et temps de course ;
+     lancer = distance du 1er plot et écart entre plots ; maximum de points = nombre de plots.
      Basket (tir long) : plot 1 à 4 m, puis un plot tous les 2 m (1 à 20 plots)
    ===================================================================== */
 'use strict';
 
-const APP_VERSION = '4.1.0';
+const APP_VERSION = '4.3.0';
 const STORE_KEY = 'neps_biathlon5s_v2';
 const QR_CHUNK = 440;           // caractères base45 par QR (QR version 11 max : facile à lire par une caméra)
 
 /* Les deux épreuves du biathlon */
 const ACT = {
-  s: { id:'s', key:'c', ico:'🏃', label:'Sprint 5 s', att:'nbCourses', base:'baseCourses', plots:'plotsS', ecart:'ecartS',
+  s: { id:'s', key:'c', ico:'🏃', get label(){ return 'Sprint ' + fmt(S.settings.timeS) + ' s'; }, att:'nbCourses', base:'baseCourses', plots:'plotsS', ecart:'ecartS',
        man:'manual', adj:'adjust', proj:'cibleS', maxPlots:20, minPlots:1, word:'course',
-       unit: k => `${14+k} km/h`, detail: k => `${fmt((14+k)/3.6*5)} m en 5 s` },
+       unit: k => `${fmt(spdS(k))} km/h`, detail: k => `${fmt(distS(k))} m en ${fmt(S.settings.timeS)} s` },
   b: { id:'b', key:'b', ico:'🏀', label:'Basket', att:'nbTirs', base:'baseTirs', plots:'plotsB', ecart:'ecartB',
        man:'manualB', adj:'adjustB', proj:'cibleB', maxPlots:20, minPlots:1, word:'tir',
-       unit: k => `${2*k+2} m`, detail: k => `plot à ${2*k+2} m` },
+       unit: k => `${fmt(distB(k))} m`, detail: k => `plot à ${fmt(distB(k))} m` },
 };
 const pts = k => `${k} pt${k>1?'s':''}`;
 const plotTxt = (a, k) => k == null ? '—' : k === 0 ? 'aucun plot' : `plot ${k} (${ACT[a].unit(k)})`;
 const plotShort = (a, k) => k == null ? '—' : `${pts(k)} · ${ACT[a].unit(k)}`;
+/* Barème réglable par l'enseignant */
+const spdS = k => +S.settings.firstS + (k - 1);                              // vitesse du plot k (km/h), +1 km/h par plot
+const distS = k => spdS(k) / 3.6 * +S.settings.timeS;                        // distance à parcourir (m)
+const distB = k => +S.settings.firstB + (k - 1) * +S.settings.stepB;         // distance du plot k au lancer (m)
 
 const COLORS = [
   {k:'rouge', n:'Rouge', c:'#E3262B'}, {k:'bleu', n:'Bleu', c:'#1E5FD8'},
@@ -40,7 +45,8 @@ const colorOf = k => COLORS.find(c => c.k === k);
    --------------------------------------------------------------------- */
 function rnd(n){ const a='abcdefghijkmnpqrstuvwxyz23456789'; let s=''; for(let i=0;i<n;i++) s+=a[Math.floor(Math.random()*a.length)]; return s; }
 const DEFAULT_SETTINGS = { nbLessons:8, current:1, pin:'0000', className:'',
-  baseCourses:3, baseTirs:3, plotsS:11, plotsB:8, ecartS:2, ecartB:1 };
+  baseCourses:3, baseTirs:3, plotsS:11, plotsB:8, ecartS:2, ecartB:1,
+  firstS:15, timeS:5, firstB:4, stepB:2 };
 function defaultState(){
   return { v:2, deviceId: rnd(4), settings:{ ...DEFAULT_SETTINGS },
     students:[], lessons:{}, results:{}, projects:{} };
@@ -288,14 +294,14 @@ function render(){
   const v = UI.view, m = $('#main');
   const cls = S.settings.className ? ' · ' + S.settings.className : '';
   const homeBtn = `<button class="btn small" data-action="go" data-view="home">⌂ Accueil</button>`;
-  if (v === 'home') { setTop('Biathlon 5 s · CA1' + cls, lessonLabel(curLesson())); m.innerHTML = viewHome(); }
+  if (v === 'home') { setTop('Biathlon · CA1' + cls, lessonLabel(curLesson())); m.innerHTML = viewHome(); }
   else if (v === 'saisie') { setTop('Saisie · Leçon ' + curLesson(), lesson(curLesson()).title, homeBtn); m.innerHTML = viewSaisie(); }
   else if (v === 'entry') { setTop('Saisie · ' + nameOf(UI.sid), lessonLabel(curLesson()), `<button class="btn small" data-action="go" data-view="saisie">▦ Élèves</button>`); m.innerHTML = viewEntry(); bindEntry(); }
   else if (v === 'stats') { setTop('Statistiques', 'Choisis un élève', homeBtn); m.innerHTML = viewStatsTiles(); }
   else if (v === 'statsDetail') { setTop('Stats · ' + nameOf(UI.sid), S.settings.className, `<button class="btn small" data-action="go" data-view="stats">▦ Élèves</button>`); m.innerHTML = viewStatsDetail(); }
   else if (v === 'prof') { setTop('Espace enseignant', lessonLabel(curLesson()), homeBtn); m.innerHTML = viewProf(); afterProf(); }
   else if (v === 'send') { setTop('Envoyer mes saisies', 'QR code à scanner par l\'enseignant', homeBtn); m.innerHTML = viewSend(); afterSend(); }
-  else if (v === 'receive') { setTop('Recevoir la leçon', 'Scanner le QR code de l\'enseignant', homeBtn); m.innerHTML = viewReceive(); afterReceive(); }
+  else if (v === 'receive') { setTop('Scanner un QR', '', homeBtn); m.innerHTML = viewReceive(); afterReceive(); }
 }
 
 /* ---------------------------------------------------------------------
@@ -309,7 +315,7 @@ function viewHome(){
     <div class="home-lesson">
       <div class="big">Leçon ${n} / ${S.settings.nbLessons}</div>
       <div style="font-size:20px;font-weight:800">${esc(L.title || 'Sans titre')}</div>
-      <div class="muted" style="font-weight:700">🏃 ${nbAtt(n,'s')} sprint(s) de 5 s · 🏀 ${nbAtt(n,'b')} tir(s) basket · ${pres}/${S.students.length} élève(s) présent(s)</div>
+      <div class="muted" style="font-weight:700">🏃 ${nbAtt(n,'s')} sprint(s) de ${fmt(S.settings.timeS)} s · 🏀 ${nbAtt(n,'b')} tir(s) basket · ${pres}/${S.students.length} élève(s) présent(s)</div>
     </div>
     <div class="home-grid">
       <button class="home-btn saisie" data-action="go" data-view="saisie"><span class="ico">✍️</span>Saisie</button>
@@ -317,7 +323,7 @@ function viewHome(){
       <button class="home-btn prof" data-action="openProf"><span class="ico">🔒</span>Enseignant</button>
     </div>
     <div class="home-sync">
-      <button class="btn" data-action="go" data-view="receive">📥 Recevoir la leçon (QR)</button>
+      <button class="btn" data-action="go" data-view="receive">📷 Scanner un QR</button>
       <button class="btn orange" data-action="go" data-view="send">📤 Envoyer mes saisies (QR)</button>
     </div>
     ${S.students.length ? '' : `<div class="card strong center" style="max-width:640px">Aucun élève</div>`}
@@ -347,7 +353,7 @@ function viewSaisie(){
   const list = sortedStudents().filter(s => present(n, s.id) && passFilter(s));
   const off = S.students.filter(s => !present(n, s.id)).length;
   return `<div class="card strong"><b style="font-size:20px">Leçon ${n} ${L.title?'– '+esc(L.title):''}</b>
-      <div class="muted" style="font-weight:700">🏃 ${nbAtt(n,'s')} sprint(s) de 5 s · 🏀 ${nbAtt(n,'b')} tir(s) basket · 1 point par plot atteint${off?` · ${off} absent(s)/inapte(s) masqué(s)`:''}</div></div>
+      <div class="muted" style="font-weight:700">🏃 ${nbAtt(n,'s')} sprint(s) de ${fmt(S.settings.timeS)} s · 🏀 ${nbAtt(n,'b')} tir(s) basket · 1 point par plot atteint${off?` · ${off} absent(s)/inapte(s) masqué(s)`:''}</div></div>
     ${filterBar()}
     <div class="tiles">${list.map(s => saisieTile(n, s)).join('') || '<p>Aucun élève dans ce groupe.</p>'}</div>`;
 }
@@ -368,10 +374,10 @@ function saisieTile(n, s){
    --------------------------------------------------------------------- */
 function targetCol(n, sid, a){
   const ti = targetInfo(n, sid, a), v = ti.value;
-  const dist = v == null ? '' : a === 's' ? `${fmt((14+v)/3.6*5)} m` : `${2*v+2} m`;
+  const dist = v == null ? '' : a === 's' ? `${fmt(distS(v))} m` : `${fmt(distB(v))} m`;
   return `<aside class="tcol tcol-${a}"><div class="ico">${ACT[a].ico}</div><div class="lbl">CIBLE</div>
     <div class="v">${v!=null?v:'—'}</div><div class="lbl">${v!=null?(v>1?'points':'point'):'à définir'}</div>
-    ${v!=null?`<div class="dist">${dist}</div>${a==='s'?`<small>${14+v} km/h</small>`:''}<small>plot ${v}</small>`:''}
+    ${v!=null?`<div class="dist">${dist}</div>${a==='s'?`<small>${fmt(spdS(v))} km/h</small>`:''}<small>plot ${v}</small>`:''}
     ${ti.sign<0?'<span class="tag easy">Facile</span>':ti.sign>0?'<span class="tag hard">Difficile</span>':''}</aside>`;
 }
 function viewEntry(){
@@ -564,17 +570,17 @@ function afterProf(){ if (UI.profTab === 'groupes') bindGroups(); }
 function stepper(action, attrs, val, disp){
   return `<div class="stepper"><button data-action="${action}" ${attrs} data-d="-1">−</button><span class="val">${disp ?? val}</span><button data-action="${action}" ${attrs} data-d="1">+</button></div>`;
 }
-function rangeField(label, val, attrs, min, max, extra=''){
-  return `<div class="field range-field">${label} <b class="rv">${val}</b>${extra}
-    <input type="range" min="${min}" max="${max}" step="1" value="${val}" ${attrs}></div>`;
+function rangeField(label, val, attrs, min, max, extra='', step=1){
+  return `<div class="field range-field">${label} <b class="rv">${fmt(val)}</b>${extra}
+    <input type="range" min="${min}" max="${max}" step="${step}" value="${val}" ${attrs}></div>`;
 }
 function plotTable(){
   const s = Array.from({length: maxPlots('s')}, (_,i)=>i+1), b = Array.from({length: maxPlots('b')}, (_,i)=>i+1);
   return `<div class="stats-cols" style="margin-top:10px">
     <table class="simple"><tr><th>🏃 Plot</th><th>Vitesse</th><th>Distance du départ</th></tr>
-      ${s.map(k=>`<tr><td><b>${k}</b></td><td>${14+k} km/h</td><td>${fmt((14+k)/3.6*5)} m</td></tr>`).join('')}</table>
+      ${s.map(k=>`<tr><td><b>${k}</b></td><td>${fmt(spdS(k))} km/h</td><td>${fmt(distS(k))} m</td></tr>`).join('')}</table>
     <table class="simple"><tr><th>🏀 Plot</th><th>Distance de la ligne de lancer</th></tr>
-      ${b.map(k=>`<tr><td><b>${k}</b></td><td>${2*k+2} m</td></tr>`).join('')}</table></div>`;
+      ${b.map(k=>`<tr><td><b>${k}</b></td><td>${fmt(distB(k))} m</td></tr>`).join('')}</table></div>`;
 }
 function profLecons(){
   const N = S.settings.nbLessons, cur = curLesson(), st = S.settings;
@@ -601,14 +607,24 @@ function profLecons(){
     <div class="card strong"><h2>Tentatives (base de chaque leçon)</h2>
       
       <div class="lesson-fields" style="grid-template-columns:1fr 1fr">
-        ${rangeField('🏃 Sprints de 5 s :', st.baseCourses, 'data-field="set" data-k="baseCourses"', 1, 10)}
+        ${rangeField(`🏃 Sprints de ${fmt(st.timeS)} s :`, st.baseCourses, 'data-field="set" data-k="baseCourses"', 1, 10)}
         ${rangeField('🏀 Tirs basket :', st.baseTirs, 'data-field="set" data-k="baseTirs"', 1, 10)}</div></div>
-    <div class="card strong"><h2>Plots (1 point par plot atteint)</h2>
-      <div class="lesson-fields" style="grid-template-columns:1fr 1fr">
-        ${rangeField('🏃 Plots sprint :', st.plotsS, 'data-field="set" data-k="plotsS"', 1, 20, ` <span class="muted">15 → ${14+st.plotsS} km/h</span>`)}
-        ${rangeField('🏀 Plots basket :', st.plotsB, 'data-field="set" data-k="plotsB"', 1, 20, ` <span class="muted">4 → ${2*st.plotsB+2} m</span>`)}
-        ${rangeField('🏃 Écart cible facile / difficile :', st.ecartS, 'data-field="set" data-k="ecartS"', 1, 3, ` plot(s) <span class="muted">≈ ${fmt(st.ecartS*5/3.6)} m</span>`)}
-        ${rangeField('🏀 Écart cible facile / difficile :', st.ecartB, 'data-field="set" data-k="ecartB"', 1, 3, ` plot(s) <span class="muted">= ${2*st.ecartB} m</span>`)}
+    <div class="card strong"><h2>Barème (1 point par plot atteint)</h2>
+      <h3 style="margin-top:6px">🏃 Course</h3>
+      <div class="lesson-fields" style="grid-template-columns:1fr 1fr 1fr">
+        ${rangeField('Vitesse du 1er plot :', st.firstS, 'data-field="set" data-k="firstS"', 5, 30, ' km/h', 1)}
+        ${rangeField('Temps de course :', st.timeS, 'data-field="set" data-k="timeS"', 2, 15, ' s', 0.5)}
+        ${rangeField('Maximum de points :', st.plotsS, 'data-field="set" data-k="plotsS"', 1, 20, ` <span class="muted">= ${st.plotsS} plots · ${fmt(spdS(1))} → ${fmt(spdS(st.plotsS))} km/h</span>`)}
+      </div>
+      <h3 style="margin-top:12px">🏀 Lancer</h3>
+      <div class="lesson-fields" style="grid-template-columns:1fr 1fr 1fr">
+        ${rangeField('Distance du 1er plot :', st.firstB, 'data-field="set" data-k="firstB"', 1, 15, ' m', 0.5)}
+        ${rangeField('Écart entre 2 plots :', st.stepB, 'data-field="set" data-k="stepB"', 0.5, 5, ' m', 0.5)}
+        ${rangeField('Maximum de points :', st.plotsB, 'data-field="set" data-k="plotsB"', 1, 20, ` <span class="muted">= ${st.plotsB} plots · ${fmt(distB(1))} → ${fmt(distB(st.plotsB))} m</span>`)}
+      </div>
+      <div class="lesson-fields" style="grid-template-columns:1fr 1fr;margin-top:12px">
+        ${rangeField('🏃 Écart cible facile / difficile :', st.ecartS, 'data-field="set" data-k="ecartS"', 1, 3, ` pt(s)`)}
+        ${rangeField('🏀 Écart cible facile / difficile :', st.ecartB, 'data-field="set" data-k="ecartB"', 1, 3, ` pt(s)`)}
       </div>
       <details style="margin-top:10px"><summary style="font-weight:900;font-size:18px;cursor:pointer">📏 Mise en place des plots (distances)</summary>${plotTable()}</details></div>
     <div class="card"><h2>Leçons</h2>
@@ -846,9 +862,9 @@ function exportXlsx(){
   XLSX.utils.book_append_sheet(wb, w2, 'Détail par leçon');
   const lessons = []; for (let n = 1; n <= N; n++) lessons.push([n, lesson(n).title, nbAtt(n,'s'), nbAtt(n,'b'), hasSource(n) ? `Résultats L${lesson(n).source} (${lesson(n).calc==='avg'?'moyenne':'meilleur'})` : (n===1?'À la main':'Reprise leçon précédente')]);
   XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet([['Leçon','Titre','Sprints','Tirs basket','Cibles de base'], ...lessons]), 'Leçons');
-  const plots = [['Plot','Sprint : vitesse (km/h)','Sprint : distance en 5 s (m)','Basket : distance (m)']];
+  const plots = [['Plot / points','Sprint : vitesse (km/h)',`Sprint : distance en ${S.settings.timeS} s (m)`,'Basket : distance (m)']];
   for (let k = 1; k <= Math.max(maxPlots('s'), maxPlots('b')); k++)
-    plots.push([k, k<=maxPlots('s')?14+k:'', k<=maxPlots('s')?Math.round((14+k)/3.6*5*100)/100:'', k<=maxPlots('b')?2*k+2:'']);
+    plots.push([k, k<=maxPlots('s')?spdS(k):'', k<=maxPlots('s')?Math.round(distS(k)*100)/100:'', k<=maxPlots('b')?distB(k):'']);
   XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet(plots), 'Plots');
   const name = `Biathlon5s_${(S.settings.className||'classe').replace(/[^\wÀ-ÿ-]+/g,'_')}_${new Date().toISOString().slice(0,10)}.xlsx`;
   XLSX.writeFile(wb, name);
@@ -870,7 +886,8 @@ function buildFull(light=false){
   if (light) Object.entries(lessons).forEach(([n, L]) => { if (+n !== cur) { delete L.manual; delete L.manualB; delete L.adjust; delete L.adjustB; delete L.att; } });
   return { k:'full', light, from:S.deviceId, at:now(), st:{
     settings:{ nbLessons:S.settings.nbLessons, current:cur, className:S.settings.className,
-      baseCourses:S.settings.baseCourses, baseTirs:S.settings.baseTirs, plotsS:S.settings.plotsS, plotsB:S.settings.plotsB, ecartS:S.settings.ecartS, ecartB:S.settings.ecartB },
+      baseCourses:S.settings.baseCourses, baseTirs:S.settings.baseTirs, plotsS:S.settings.plotsS, plotsB:S.settings.plotsB, ecartS:S.settings.ecartS, ecartB:S.settings.ecartB,
+      firstS:S.settings.firstS, timeS:S.settings.timeS, firstB:S.settings.firstB, stepB:S.settings.stepB },
     students: S.students.map(s => ({ id:s.id, disp:nameOf(s.id), g:s.g||null })),
     lessons, fixed, results, projects: light ? {} : S.projects } };
 }
@@ -924,6 +941,7 @@ async function applyPacket(p){
     return 'continue';
   }
   if (p.k === 'lesson') {
+    if (S.students.some(s => s.nom)) throw new Error('QR Leçon : à scanner sur les tablettes des élèves');
     const list = S.students;                      // même ordre que le QR « Élèves »
     if (!list.length || listHash(list.map(s => s.id)) !== p.hash) { toast('⚠️ Scannez d\'abord le QR « Élèves »', 4000); throw new Error('Liste des élèves différente'); }
     const pin = S.settings.pin; S.settings = { ...S.settings, ...p.settings, pin };
@@ -974,9 +992,10 @@ function binNames(){
 }
 function binLesson(){
   const cur = curLesson(), L = lesson(cur), st = S.settings, list = sortedStudents();
-  const w = BW(); w.u8('L'.charCodeAt(0)); w.u8(1);
+  const w = BW(); w.u8('L'.charCodeAt(0)); w.u8(2);
   w.u32(listHash(list.map(s => s.id)));
   [st.nbLessons, cur, st.baseCourses, st.baseTirs, st.plotsS, st.plotsB, st.ecartS, st.ecartB, nbAtt(cur,'s'), nbAtt(cur,'b')].forEach(v => w.u8(v));
+  w.u8(st.firstS); w.u8(Math.round(st.timeS*10)); w.u8(Math.round(st.firstB*2)); w.u8(Math.round(st.stepB*2));
   w.str(L.title, 80); w.u8(list.length);
   list.forEach(s => {
     const aS = +(L.adjust[s.id]||0), aB = +(L.adjustB[s.id]||0), at = attOf(cur, s.id);
@@ -999,7 +1018,7 @@ function binResults(){
   return { bytes: w.bytes(), count: ents.length + projs.length };
 }
 function binDecode(u){
-  const r = BR(u), t = String.fromCharCode(r.u8()); r.u8();
+  const r = BR(u), t = String.fromCharCode(r.u8()), ver = r.u8();
   if (t === 'N') {
     const className = r.str(), n = r.u8(), students = [];
     for (let i = 0; i < n; i++) { const id = r.id(), g = GKEY(r.u8()), disp = r.str(); students.push({ id, disp, g }); }
@@ -1007,11 +1026,12 @@ function binDecode(u){
   }
   if (t === 'L') {
     const hash = r.u32(); const v = []; for (let i = 0; i < 10; i++) v.push(r.u8());
+    const bar = ver >= 2 ? { firstS: r.u8(), timeS: r.u8()/10, firstB: r.u8()/2, stepB: r.u8()/2 } : {};
     const title = r.str(), n = r.u8(), rows = [];
     for (let i = 0; i < n; i++) { const tS = vn(r.u8()), tB = vn(r.u8()), f = r.u8(), g = GKEY(r.u8());
       rows.push({ tS, tB, aS: [0,-1,1][f&3], aB: [0,-1,1][(f>>2)&3], att: [null,'abs','inap'][(f>>4)&3], g }); }
     const [nbLessons, current, baseCourses, baseTirs, plotsS, plotsB, ecartS, ecartB, nbC, nbT] = v;
-    return { k:'lesson', hash, settings:{ nbLessons, current, baseCourses, baseTirs, plotsS, plotsB, ecartS, ecartB }, nbC, nbT, title, rows };
+    return { k:'lesson', hash, settings:{ nbLessons, current, baseCourses, baseTirs, plotsS, plotsB, ecartS, ecartB, ...bar }, nbC, nbT, title, rows };
   }
   if (t === 'R') {
     const from = r.id(), n = r.u16(), results = {}, projects = {};
@@ -1373,11 +1393,11 @@ async function afterSend(){
   showQRSeries(chunkQR(payload, 'R', 260), area, '');
 }
 function viewReceive(){
-  return `<div class="card strong center"><b style="font-size:20px">Scannez le QR « leçon » affiché par l'enseignant</b></div>
+  return `<div class="card strong center"><b style="font-size:20px">Élèves · Leçon · Saisies</b></div>
     <div id="scan-area"></div>
     <div class="btn-row" style="justify-content:center;margin-top:12px"><label class="btn">📂 Importer un fichier (.json)<input type="file" id="file-sync" accept=".json,application/json" hidden></label></div>`;
 }
-function afterReceive(){ startScan($('#scan-area'), ['F','N','L'], p => applyPacket(p)); }
+function afterReceive(){ startScan($('#scan-area'), null, async p => { const r = await applyPacket(p); return (p.k === 'res' || r === 'continue') ? 'continue' : r; }); }
 
 async function downloadJSON(obj, name){
   const blob = new Blob([JSON.stringify(obj)], { type:'application/json' });
@@ -1472,7 +1492,7 @@ const A = {
   scanResults: () => {
     const m = modal(`<h2>Scanner une tablette</h2><div id="scan-modal"></div><div class="btn-row" style="justify-content:center;margin-top:10px"><button class="btn primary" data-close>Terminer</button></div>`, { wide:true });
     m.querySelector('[data-close]').onclick = () => { closeModal(); render(); };
-    startScan(m.querySelector('#scan-modal'), 'R', async p => { await applyPacket(p); return 'continue'; });
+    startScan(m.querySelector('#scan-modal'), null, async p => { await applyPacket(p); return 'continue'; });
   },
   fileFull: () => downloadJSON(buildFull(), `Biathlon5s_lecon${curLesson()}.json`),
   fileMine: () => downloadJSON(buildMine().pkt, `Biathlon5s_saisies_${S.deviceId}.json`),
@@ -1508,7 +1528,7 @@ document.addEventListener('change', e => {
 
 document.addEventListener('input', e => {
   const t = e.target;
-  if (t.type === 'range') { const rv = t.closest('.range-field')?.querySelector('.rv'); if (rv) rv.textContent = t.value; }
+  if (t.type === 'range') { const rv = t.closest('.range-field')?.querySelector('.rv'); if (rv) rv.textContent = fmt(+t.value); }
 });
 
 /* ---------------------------------------------------------------------
