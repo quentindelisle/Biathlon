@@ -10,7 +10,7 @@
    ===================================================================== */
 'use strict';
 
-const APP_VERSION = '5.0.0';
+const APP_VERSION = '5.1.0';
 const STORE_KEY = 'neps_biathlon5s_v2';
 const QR_CHUNK = 440;           // caractères base45 par QR (QR version 11 max : facile à lire par une caméra)
 
@@ -235,7 +235,7 @@ function targetInfo(n, sid, a){
   n = +n;
   const L = lesson(n);
   const base = baseTarget(n, sid, a);
-  const sign = +(L[ACT[a].adj][sid] || 0);
+  const sign = 0;                                   // cibles facile / difficile supprimées
   const adj = sign * +S.settings[ACT[a].ecart];
   const value = base == null ? null : clampT(a, base + adj);
   const prev = n > 1 ? targetInfo(n-1, sid, a).value : null;
@@ -298,11 +298,11 @@ function advicesFor(sid, a){
   const prevOk = prev && prev.t != null && prev.v.length >= 2 && prev.v.every(v => v >= prev.t);
   const above = t != null && last.v.filter(v => v > t).length;
   if (allOk) out.push({ cls:'', t: (prevOk || above >= 2)
-      ? `${P}Tu atteins ta cible à <b>chaque ${A_.word}</b>${prevOk?' depuis 2 leçons':''} : elle est sans doute trop facile. Demande à ton enseignant de la revoir (plot supérieur ou cible difficile).`
+      ? `${P}Tu atteins ta cible à <b>chaque ${A_.word}</b>${prevOk?' depuis 2 leçons':''} : elle est sans doute trop facile. Demande à ton enseignant de la revoir (plot supérieur).`
       : `${P}Tu as atteint ta cible à toutes tes tentatives : peut-être faut-il la revoir à la hausse ?` });
   const m = avg(last.v);
   if (t != null && m != null && last.v.length >= 2 && m <= t - 2)
-    out.push({ cls:'', t:`${P}En moyenne tu marques ${fmt(m)} points pour une cible de ${pts(t)} : ta cible est peut-être trop difficile aujourd'hui. Tu peux demander une cible facile.` });
+    out.push({ cls:'', t:`${P}En moyenne tu marques ${fmt(m)} points pour une cible de ${pts(t)} : ta cible est peut-être trop difficile aujourd'hui. Parles-en à ton enseignant.` });
   const lastIdx = c.length - 1;
   if (last.v.length >= 3 && c[lastIdx] != null && c[0] != null && c[lastIdx] <= c[0] - 2)
     out.push({ cls:'', t:`${P}Tes performances baissent sur les dernières tentatives : récupère bien entre chaque ${A_.word} et dose ton effort.` });
@@ -631,7 +631,7 @@ function stepper(action, attrs, val, disp){
   return `<div class="stepper"><button data-action="${action}" ${attrs} data-d="-1">−</button><span class="val">${disp ?? val}</span><button data-action="${action}" ${attrs} data-d="1">+</button></div>`;
 }
 function rangeField(label, val, attrs, min, max, extra='', step=1){
-  return `<div class="field range-field">${label} <b class="rv">${fmt(val)}</b>${extra}
+  return `<div class="rf"><div class="rf-h"><span class="rf-l">${label}</span> <b class="rv">${fmt(val)}</b>${extra}</div>
     <input type="range" min="${min}" max="${max}" step="${step}" value="${val}" ${attrs}></div>`;
 }
 function plotTable(){
@@ -647,55 +647,42 @@ function profLecons(){
   let rows = '';
   for (let n = 1; n <= N; n++) {
     const L = lesson(n);
-    const srcSel = sourceSelect(n, 'Cibles de cette leçon');
-    const attF = a => { const ov = isOverride(n, a);
-      return rangeField(`${ACT[a].ico} ${a==='s'?'Sprints':'Tirs'} :`, nbAtt(n, a), `data-field="att" data-n="${n}" data-a="${a}"`, 0, 10,
-        ov ? ` <button class="btn small ghost" data-action="attReset" data-n="${n}" data-a="${a}">↺ base</button>` : ' <span class="muted">(base)</span>'); };
-    rows += `<div class="lesson-row"><div class="lesson-num ${n===cur?'cur':''}">${n}</div><div class="lesson-fields">
-      <label class="field full">Titre / contenu de la leçon${isLast(n)?' — dernière leçon : projet élève':''}
-        <input type="text" data-field="title" data-n="${n}" value="${esc(L.title)}" ></label>
-      ${attF('s')}${attF('b')}
-      <div class="full">${srcSel}</div>
-    </div></div>`;
+    const attF = a => rangeField(`${ACT[a].ico} ${a==='s'?'Sprints':'Tirs'}`, nbAtt(n, a), `data-field="att" data-n="${n}" data-a="${a}"`, 0, 10,
+        isOverride(n, a) ? ` <button class="btn small ghost xs" data-action="attReset" data-n="${n}" data-a="${a}">Réinitialiser</button>` : '');
+    rows += `<div class="lrow"><div class="lesson-num ${n===cur?'cur':''}">${n}</div><div class="lrow-main">
+      <div class="lrow-top"><input type="text" data-field="title" data-n="${n}" value="${esc(L.title)}" placeholder="Titre${isLast(n)?' · dernière leçon (projet élève)':''}">${sourceSelect(n)}</div>
+      <div class="lrow-att">${attF('s')}${attF('b')}</div></div></div>`;
   }
-  return `<div class="card strong"><h2>Leçon en cours</h2>
-      
+  return `<div class="card strong compact"><h2>Paramètres du cycle</h2>
+      <div class="cgrid">
+        <div class="rf"><div class="rf-h"><span class="rf-l">📅 Leçons du cycle</span></div>${stepper('nbLessons','',N)}</div>
+        ${rangeField(`🏃 Sprints / leçon`, st.baseCourses, 'data-field="set" data-k="baseCourses"', 1, 10)}
+        ${rangeField('🏀 Tirs / leçon', st.baseTirs, 'data-field="set" data-k="baseTirs"', 1, 10)}
+      </div>
+      <h3>🏃 Course <span class="muted">· ${st.plotsS} plots · ${fmt(spdS(1))} → ${fmt(spdS(st.plotsS))} km/h</span></h3>
+      <div class="cgrid">
+        ${rangeField('1er plot', st.firstS, 'data-field="set" data-k="firstS"', 5, 30, ' km/h', 1)}
+        ${rangeField('Temps', st.timeS, 'data-field="set" data-k="timeS"', 2, 15, ' s', 0.5)}
+        ${rangeField('Points max', st.plotsS, 'data-field="set" data-k="plotsS"', 1, 20)}
+      </div>
+      <h3>🏀 Lancer <span class="muted">· ${st.plotsB} plots · ${fmt(distB(1))} → ${fmt(distB(st.plotsB))} m</span></h3>
+      <div class="cgrid">
+        ${rangeField('1er plot', st.firstB, 'data-field="set" data-k="firstB"', 1, 15, ' m', 0.5)}
+        ${rangeField('Écart', st.stepB, 'data-field="set" data-k="stepB"', 0.5, 5, ' m', 0.5)}
+        ${rangeField('Points max', st.plotsB, 'data-field="set" data-k="plotsB"', 1, 20)}
+      </div>
+      <details><summary style="font-weight:900;cursor:pointer">📏 Mise en place des plots</summary>${plotTable()}</details></div>
+    <div class="card strong compact"><h2>Leçon en cours</h2>
       <div class="lesson-picker">${Array.from({length:N},(_,i)=>i+1).map(n=>`<button class="lp ${n===cur?'on':''}" data-action="setCurrent" data-n="${n}">${n}</button>`).join('')}</div></div>
-    <div class="card"><h2>Cycle</h2><div class="row">
-      <div class="field">Nombre de leçons du cycle${stepper('nbLessons','',N)}</div></div></div>
-    <div class="card strong"><h2>Tentatives (base de chaque leçon)</h2>
-      
-      <div class="lesson-fields" style="grid-template-columns:1fr 1fr">
-        ${rangeField(`🏃 Sprints de ${fmt(st.timeS)} s :`, st.baseCourses, 'data-field="set" data-k="baseCourses"', 1, 10)}
-        ${rangeField('🏀 Tirs basket :', st.baseTirs, 'data-field="set" data-k="baseTirs"', 1, 10)}</div></div>
-    <div class="card strong"><h2>Barème (1 point par plot atteint)</h2>
-      <h3 style="margin-top:6px">🏃 Course</h3>
-      <div class="lesson-fields" style="grid-template-columns:1fr 1fr 1fr">
-        ${rangeField('Vitesse du 1er plot :', st.firstS, 'data-field="set" data-k="firstS"', 5, 30, ' km/h', 1)}
-        ${rangeField('Temps de course :', st.timeS, 'data-field="set" data-k="timeS"', 2, 15, ' s', 0.5)}
-        ${rangeField('Maximum de points :', st.plotsS, 'data-field="set" data-k="plotsS"', 1, 20, ` <span class="muted">= ${st.plotsS} plots · ${fmt(spdS(1))} → ${fmt(spdS(st.plotsS))} km/h</span>`)}
-      </div>
-      <h3 style="margin-top:12px">🏀 Lancer</h3>
-      <div class="lesson-fields" style="grid-template-columns:1fr 1fr 1fr">
-        ${rangeField('Distance du 1er plot :', st.firstB, 'data-field="set" data-k="firstB"', 1, 15, ' m', 0.5)}
-        ${rangeField('Écart entre 2 plots :', st.stepB, 'data-field="set" data-k="stepB"', 0.5, 5, ' m', 0.5)}
-        ${rangeField('Maximum de points :', st.plotsB, 'data-field="set" data-k="plotsB"', 1, 20, ` <span class="muted">= ${st.plotsB} plots · ${fmt(distB(1))} → ${fmt(distB(st.plotsB))} m</span>`)}
-      </div>
-      <div class="lesson-fields" style="grid-template-columns:1fr 1fr;margin-top:12px">
-        ${rangeField('🏃 Écart cible facile / difficile :', st.ecartS, 'data-field="set" data-k="ecartS"', 1, 3, ` pt(s)`)}
-        ${rangeField('🏀 Écart cible facile / difficile :', st.ecartB, 'data-field="set" data-k="ecartB"', 1, 3, ` pt(s)`)}
-      </div>
-      <details style="margin-top:10px"><summary style="font-weight:900;font-size:18px;cursor:pointer">📏 Mise en place des plots (distances)</summary>${plotTable()}</details></div>
-    <div class="card"><h2>Leçons</h2>
-      ${rows}</div>`;
+    <div class="card compact"><h2>Leçons</h2>${rows}</div>`;
 }
-function sourceSelect(n, label){
+function sourceSelect(n, label=''){
   const L = lesson(n);
   const count = x => S.students.filter(st => vals(perf(x, st.id, 's')).length || vals(perf(x, st.id, 'b')).length).length;
-  const opts = `<option value="prev" ${!hasSource(n)?'selected':''}>${n===1?'Cibles fixées à la main (ci-dessous)':`Garder les cibles en cours (leçon ${n-1})`}</option>` +
-    Array.from({length:n-1},(_,i)=>i+1).map(x=>`<option value="${x}" ${hasSource(n)&&L.source===x?'selected':''}>Utiliser les résultats de la leçon ${x} comme cibles (${count(x)} élève(s))</option>`).join('');
-  return `<div class="row"><label class="field grow">${label}<select data-field="source" data-n="${n}" ${n===1?'disabled':''}>${opts}</select></label>
-    ${hasSource(n)?`<label class="field">Calcul<select data-field="calc" data-n="${n}">
+  const opts = `<option value="prev" ${!hasSource(n)?'selected':''}>${n===1?'Choix manuel des cibles':`Garder les cibles de la leçon ${n-1}`}</option>` +
+    Array.from({length:n-1},(_,i)=>i+1).map(x=>`<option value="${x}" ${hasSource(n)&&L.source===x?'selected':''}>Cibles = résultats de la leçon ${x} (${count(x)} él.)</option>`).join('');
+  return `<div class="src-sel">${label?`<label class="field grow">${label}`:'<label class="grow">'}<select data-field="source" data-n="${n}" ${n===1?'disabled':''}>${opts}</select></label>
+    ${hasSource(n)?`<label><select data-field="calc" data-n="${n}">
       <option value="max" ${L.calc!=='avg'?'selected':''}>Meilleur plot atteint</option>
       <option value="avg" ${L.calc==='avg'?'selected':''}>Moyenne arrondie</option></select></label>`:''}</div>`;
 }
@@ -705,15 +692,12 @@ function profCibles(){
   const block = (sid, a) => {
     const ti = targetInfo(n, sid, a), A_ = ACT[a];
     return `<div class="tg-act"><div class="tg-h">${A_.ico} ${A_.label}</div>
-      <div class="row" style="gap:8px"><div class="stepper"><button data-action="tgStep" data-sid="${sid}" data-a="${a}" data-d="-1">−</button>
+      <div class="row" style="gap:8px;flex-wrap:nowrap"><div class="stepper"><button data-action="tgStep" data-sid="${sid}" data-a="${a}" data-d="-1">−</button>
         <span class="val" style="min-width:74px">${ti.base!=null?pts(ti.base):'—'}</span>
         <button data-action="tgStep" data-sid="${sid}" data-a="${a}" data-d="1">+</button></div>
-        ${ti.manual?`<button class="btn small ghost" data-action="resetTarget" data-sid="${sid}" data-a="${a}">↺</button>`:''}</div>
+        ${ti.manual?`<button class="btn ghost xs" style="margin-left:0" data-action="resetTarget" data-sid="${sid}" data-a="${a}">Réinitialiser</button>`:''}</div>
       <div class="muted" style="font-size:14px;font-weight:700">${ti.base!=null?ACT[a].unit(ti.base)+' · ':''}${ti.src}${ti.changed?` · avant ${pts(ti.prev)}`:''}</div>
-      <div class="seg" style="margin:6px 0"><button class="easy ${ti.sign<0?'on':''}" data-action="adjust" data-sid="${sid}" data-a="${a}" data-v="-1">Facile</button>
-        <button class="norm ${!ti.sign?'on':''}" data-action="adjust" data-sid="${sid}" data-a="${a}" data-v="0">Normal</button>
-        <button class="hard ${ti.sign>0?'on':''}" data-action="adjust" data-sid="${sid}" data-a="${a}" data-v="1">Difficile</button></div>
-      ${ti.sign?`<div style="font-weight:900;color:var(--blue)">Cible du jour : ${pts(ti.value)}</div>`:''}</div>`;
+</div>`;
   };
   const bulk = a => { const v = UI['bulk'+a] ?? Math.ceil(maxPlots(a)/2);
     return `<div class="row" style="gap:8px"><b>${ACT[a].ico} ${ACT[a].label}</b>

@@ -309,3 +309,33 @@ select[disabled]{opacity:.7}
 .grp-btn .sw{position:absolute;left:0;right:0;top:0;height:22px}
 .grp-btn small{font-size:16px;color:var(--grey)}
 .grp-btn.all{grid-column:1/-1;min-height:80px;font-size:22px}
+/* ---------- Affichage compact (Cycle & leçons) ---------- */
+.card.compact{padding:10px 14px;margin-bottom:10px}
+.card.compact h2{font-size:20px;margin-bottom:6px}
+.card.compact h3{font-size:16px;margin:10px 0 4px}
+.cgrid{display:grid;grid-template-columns:repeat(3,1fr);gap:4px 16px}
+.rf{display:flex;flex-direction:column;gap:0;min-width:0}
+.rf-h{display:flex;align-items:baseline;gap:6px;white-space:nowrap;font-size:15px;font-weight:800;line-height:1.2}
+.rf-l{overflow:hidden;text-overflow:ellipsis}
+.rf-h .rv{font-size:19px;color:var(--orange)}
+.rf input[type=range]{height:30px}
+.rf .stepper button{width:40px;height:36px;font-size:20px}
+.rf .stepper .val{min-width:40px;font-size:20px}
+.btn.xs{min-height:28px;padding:1px 8px;font-size:12px;border-width:2px;margin-left:auto}
+.lrow{display:grid;grid-template-columns:44px 1fr;gap:10px;align-items:center;border-top:2px solid var(--line);padding:8px 0}
+.lrow:first-of-type{border-top:0}
+.lrow .lesson-num{width:44px;height:44px;font-size:20px;border-radius:10px}
+.lrow-main{display:flex;flex-direction:column;gap:4px;min-width:0}
+.lrow-top{display:grid;grid-template-columns:1fr minmax(0,1fr);gap:8px}
+.lrow-top input[type=text],.src-sel select{min-height:38px;padding:4px 10px;font-size:15px;border-width:2px}
+.src-sel{display:flex;gap:6px;min-width:0}
+.src-sel label{min-width:0}
+.lrow-att{display:grid;grid-template-columns:1fr 1fr;gap:16px}
+@media (max-width:700px){ .cgrid{grid-template-columns:1fr 1fr} .lrow-top{grid-template-columns:1fr} }
+/* libellé + valeur + curseur sur une seule ligne */
+.rf{display:grid;grid-template-columns:auto 1fr;align-items:center;gap:8px}
+.rf-h{min-width:0}
+.lrow{padding:6px 0}
+.lrow-att .rf-h{min-width:92px}
+.cgrid .rf-h{min-width:118px}
+.lrow-att .rf-h{width:104px}
