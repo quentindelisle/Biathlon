@@ -10,7 +10,7 @@
    ===================================================================== */
 'use strict';
 
-const APP_VERSION = '4.3.0';
+const APP_VERSION = '5.0.0';
 const STORE_KEY = 'neps_biathlon5s_v2';
 const QR_CHUNK = 440;           // caractères base45 par QR (QR version 11 max : facile à lire par une caméra)
 
@@ -44,22 +44,61 @@ const colorOf = k => COLORS.find(c => c.k === k);
    État
    --------------------------------------------------------------------- */
 function rnd(n){ const a='abcdefghijkmnpqrstuvwxyz23456789'; let s=''; for(let i=0;i<n;i++) s+=a[Math.floor(Math.random()*a.length)]; return s; }
-const DEFAULT_SETTINGS = { nbLessons:8, current:1, pin:'0000', className:'',
+const DEFAULT_SETTINGS = { nbLessons:8, current:1, className:'',
   baseCourses:3, baseTirs:3, plotsS:11, plotsB:8, ecartS:2, ecartB:1,
-  firstS:15, timeS:5, firstB:4, stepB:2 };
-function defaultState(){
-  return { v:2, deviceId: rnd(4), settings:{ ...DEFAULT_SETTINGS },
+  firstS:15, timeS:5, firstB:4, stepB:2, nbGroups:1, groupColors:['rouge','bleu','jaune','vert'] };
+const ROOT_KEY = 'neps_biathlon5s_v3';
+/* Plusieurs classes (cycles) sur le même appareil : ROOT = { deviceId, pin, active, classes:{ id: classe } } ;
+   S désigne toujours la classe active. */
+function newClassState(name, id){
+  return { id: id || rnd(4), settings:{ ...DEFAULT_SETTINGS, className: name || '', groupColors:[...DEFAULT_SETTINGS.groupColors] },
     students:[], lessons:{}, results:{}, projects:{} };
 }
-let S;
-try { S = JSON.parse(localStorage.getItem(STORE_KEY)) || defaultState(); } catch(e){ S = defaultState(); }
-if (!S.deviceId) S.deviceId = rnd(4);
-S.settings = { ...DEFAULT_SETTINGS, ...(S.settings||{}) };
-S.settings.plotsB = Math.min(20, S.settings.plotsB); S.settings.plotsS = Math.min(20, S.settings.plotsS);
-['students','lessons','results','projects'].forEach(k => { if(!S[k]) S[k] = (k==='students'?[]:{}); });
+function normClass(c){
+  c.settings = { ...DEFAULT_SETTINGS, ...(c.settings||{}) };
+  c.settings.groupColors = (c.settings.groupColors && c.settings.groupColors.length === 4) ? c.settings.groupColors : [...DEFAULT_SETTINGS.groupColors];
+  c.settings.plotsB = Math.min(20, c.settings.plotsB); c.settings.plotsS = Math.min(20, c.settings.plotsS);
+  delete c.settings.pin;
+  ['students','lessons','results','projects'].forEach(k => { if (!c[k]) c[k] = (k==='students'?[]:{}); });
+  // ancienne notion « chasuble » (couleur libre) → groupes 1 à 4
+  const old = [...new Set(c.students.map(x => x.g).filter(g => g && typeof g === 'string'))];
+  if (old.length && c.students.every(x => x.grp == null)) {
+    const cols = old.slice(0, 4); c.settings.nbGroups = Math.max(1, cols.length);
+    cols.forEach((k, i) => c.settings.groupColors[i] = k);
+    c.students.forEach(x => { const i = cols.indexOf(x.g); x.grp = i >= 0 ? i + 1 : 0; });
+  }
+  c.students.forEach(x => { delete x.g; if (x.grp == null) x.grp = 0; });
+  return c;
+}
+let ROOT, S;
+function loadRoot(){
+  try { ROOT = JSON.parse(localStorage.getItem(ROOT_KEY)); } catch(e){ ROOT = null; }
+  if (!ROOT || !ROOT.classes) {
+    ROOT = { v:3, deviceId: rnd(4), pin:'0000', active:null, classes:{} };
+    let old = null; try { old = JSON.parse(localStorage.getItem('neps_biathlon5s_v2')); } catch(e){}
+    if (old && old.students) {                                   // reprise de la version précédente
+      ROOT.deviceId = old.deviceId || ROOT.deviceId; ROOT.pin = (old.settings && old.settings.pin) || '0000';
+      const c = { ...old, id: rnd(4) }; delete c.deviceId; delete c.v;
+      if (!c.settings.className) c.settings.className = 'Classe 1';
+      ROOT.classes[c.id] = c;
+    }
+  }
+  if (!ROOT.deviceId) ROOT.deviceId = rnd(4);
+  if (!ROOT.pin) ROOT.pin = '0000';
+  Object.values(ROOT.classes).forEach(normClass);
+  if (!Object.keys(ROOT.classes).length) { const c = newClassState('Classe 1'); ROOT.classes[c.id] = c; }
+  if (!ROOT.classes[ROOT.active]) ROOT.active = Object.keys(ROOT.classes)[0];
+  useClass(ROOT.active);
+}
+function useClass(id){
+  ROOT.active = id; S = ROOT.classes[id]; S.deviceId = ROOT.deviceId;
+  try { computeNames(); } catch(e){}
+}
+const className = c => (c || S).settings.className || 'Classe';
+loadRoot();
 
 function save(){
-  try { localStorage.setItem(STORE_KEY, JSON.stringify(S)); }
+  try { localStorage.setItem(ROOT_KEY, JSON.stringify(ROOT)); }
   catch(e){ toast('⚠️ Enregistrement impossible sur cet appareil'); }
   computeNames();
 }
@@ -284,7 +323,7 @@ function advices(sid){
    Rendu général
    --------------------------------------------------------------------- */
 function setTop(main, sub, right=''){
-  $('#tb-main').textContent = main; $('#tb-sub').textContent = sub || ''; $('#tb-right').innerHTML = right;
+  $('#tb-main').textContent = main; $('#tb-sub').textContent = '🏫 ' + className() + (sub ? ' · ' + sub : ''); $('#tb-right').innerHTML = right;
 }
 function lessonLabel(n){ const L = lesson(n); return `Leçon ${n}/${S.settings.nbLessons}` + (L.title ? ' · ' + L.title : ''); }
 function go(view, opts={}){ Object.assign(UI, opts); UI.view = view; render(); window.scrollTo(0,0); }
@@ -292,16 +331,15 @@ function go(view, opts={}){ Object.assign(UI, opts); UI.view = view; render(); w
 function render(){
   stopScan();
   const v = UI.view, m = $('#main');
-  const cls = S.settings.className ? ' · ' + S.settings.className : '';
   const homeBtn = `<button class="btn small" data-action="go" data-view="home">⌂ Accueil</button>`;
-  if (v === 'home') { setTop('Biathlon · CA1' + cls, lessonLabel(curLesson())); m.innerHTML = viewHome(); }
-  else if (v === 'saisie') { setTop('Saisie · Leçon ' + curLesson(), lesson(curLesson()).title, homeBtn); m.innerHTML = viewSaisie(); }
+  if (v === 'home') { setTop('Biathlon · CA1', lessonLabel(curLesson())); m.innerHTML = viewHome(); }
+  else if (v === 'saisie') { setTop('Saisie · Leçon ' + curLesson(), UI.filter ? groupName(UI.filter) : lesson(curLesson()).title, homeBtn); m.innerHTML = viewSaisie(); }
   else if (v === 'entry') { setTop('Saisie · ' + nameOf(UI.sid), lessonLabel(curLesson()), `<button class="btn small" data-action="go" data-view="saisie">▦ Élèves</button>`); m.innerHTML = viewEntry(); bindEntry(); }
   else if (v === 'stats') { setTop('Statistiques', 'Choisis un élève', homeBtn); m.innerHTML = viewStatsTiles(); }
-  else if (v === 'statsDetail') { setTop('Stats · ' + nameOf(UI.sid), S.settings.className, `<button class="btn small" data-action="go" data-view="stats">▦ Élèves</button>`); m.innerHTML = viewStatsDetail(); }
+  else if (v === 'statsDetail') { setTop('Stats · ' + nameOf(UI.sid), '', `<button class="btn small" data-action="go" data-view="stats">▦ Élèves</button>`); m.innerHTML = viewStatsDetail(); }
   else if (v === 'prof') { setTop('Espace enseignant', lessonLabel(curLesson()), homeBtn); m.innerHTML = viewProf(); afterProf(); }
   else if (v === 'send') { setTop('Envoyer mes saisies', 'QR code à scanner par l\'enseignant', homeBtn); m.innerHTML = viewSend(); afterSend(); }
-  else if (v === 'receive') { setTop('Scanner un QR', '', homeBtn); m.innerHTML = viewReceive(); afterReceive(); }
+  else if (v === 'receive') { setTop('Scanner un QR', '', `<button class="btn small" data-action="go" data-view="prof">🔒 Enseignant</button>`); m.innerHTML = viewReceive(); afterReceive(); }
 }
 
 /* ---------------------------------------------------------------------
@@ -310,20 +348,22 @@ function render(){
 function viewHome(){
   const n = curLesson(), L = lesson(n);
   const pres = S.students.filter(s => present(n, s.id)).length;
+  const cls = Object.values(ROOT.classes);
   return `<div class="home">
     <img class="home-logo" src="logo-app.png" alt="N'EPS numérique – CA1 Biathlon">
+    ${cls.length > 1 ? `<div class="class-chips">${cls.map(c=>`<button class="class-chip ${c.id===S.id?'on':''}" data-action="selClass" data-id="${c.id}">🏫 ${esc(className(c))}</button>`).join('')}</div>`
+      : `<div class="class-chips"><span class="class-chip on">🏫 ${esc(className())}</span></div>`}
     <div class="home-lesson">
       <div class="big">Leçon ${n} / ${S.settings.nbLessons}</div>
       <div style="font-size:20px;font-weight:800">${esc(L.title || 'Sans titre')}</div>
       <div class="muted" style="font-weight:700">🏃 ${nbAtt(n,'s')} sprint(s) de ${fmt(S.settings.timeS)} s · 🏀 ${nbAtt(n,'b')} tir(s) basket · ${pres}/${S.students.length} élève(s) présent(s)</div>
     </div>
     <div class="home-grid">
-      <button class="home-btn saisie" data-action="go" data-view="saisie"><span class="ico">✍️</span>Saisie</button>
+      <button class="home-btn saisie" data-action="goSaisie"><span class="ico">✍️</span>Saisie</button>
       <button class="home-btn stats" data-action="go" data-view="stats"><span class="ico">📊</span>Statistiques</button>
       <button class="home-btn prof" data-action="openProf"><span class="ico">🔒</span>Enseignant</button>
     </div>
     <div class="home-sync">
-      <button class="btn" data-action="go" data-view="receive">📷 Scanner un QR</button>
       <button class="btn orange" data-action="go" data-view="send">📤 Envoyer mes saisies (QR)</button>
     </div>
     ${S.students.length ? '' : `<div class="card strong center" style="max-width:640px">Aucun élève</div>`}
@@ -333,16 +373,19 @@ function viewHome(){
 /* ---------------------------------------------------------------------
    Tuiles (commun)
    --------------------------------------------------------------------- */
-function band(sid){ const c = colorOf(student(sid)?.g); return c ? `<span class="band" style="background:${c.c};box-shadow:inset -2px 0 0 rgba(0,0,0,.35)"></span>` : '<span class="band"></span>'; }
+const nbGroups = () => Math.max(1, Math.min(4, +S.settings.nbGroups || 1));
+const groupColor = g => (g >= 1 && g <= nbGroups() && nbGroups() > 1) ? colorOf(S.settings.groupColors[g-1]) : null;
+const groupName = g => `Groupe ${g}`;
+function band(sid){ const c = groupColor(student(sid)?.grp); return c ? `<span class="band" style="background:${c.c};box-shadow:inset -2px 0 0 rgba(0,0,0,.35)"></span>` : '<span class="band"></span>'; }
 function filterBar(){
-  const used = COLORS.filter(c => S.students.some(s => s.g === c.k));
-  if (!used.length) return '';
-  return `<div class="filters"><b>Chasubles :</b>
+  if (nbGroups() < 2) return '';
+  return `<div class="filters">
     <button class="chip ${UI.filter?'':'on'}" data-action="filter" data-g="">Tous</button>
-    ${used.map(c=>`<button class="chip ${UI.filter===c.k?'on':''}" data-action="filter" data-g="${c.k}"><span class="dot" style="background:${c.c}"></span>${c.n}</button>`).join('')}
+    ${Array.from({length:nbGroups()},(_,i)=>i+1).map(g=>{ const c = groupColor(g);
+      return `<button class="chip ${UI.filter===g?'on':''}" data-action="filter" data-g="${g}"><span class="dot" style="background:${c?c.c:'#fff'}"></span>${groupName(g)}</button>`; }).join('')}
   </div>`;
 }
-const passFilter = s => !UI.filter || s.g === UI.filter;
+const passFilter = s => !UI.filter || UI.filter === 'all' || (s.grp||0) === UI.filter;
 
 /* ---------------------------------------------------------------------
    Saisie : tuiles de la leçon en cours
@@ -350,11 +393,17 @@ const passFilter = s => !UI.filter || s.g === UI.filter;
 function viewSaisie(){
   const n = curLesson(), L = lesson(n);
   if (!S.students.length) return `<div class="card strong center">Aucun élève. Recevez la leçon du professeur (QR) depuis l'accueil.</div>`;
+  if (nbGroups() > 1 && !UI.filter) {
+    return `<div class="grp-pick">${Array.from({length:nbGroups()},(_,i)=>i+1).map(g => { const c = groupColor(g);
+      const nb = S.students.filter(x => (x.grp||0) === g && present(n, x.id)).length;
+      return `<button class="grp-btn" data-action="pickGroup" data-g="${g}"><span class="sw" style="background:${c?c.c:'#ccc'}"></span>${groupName(g)}<small>${nb} élève(s)</small></button>`; }).join('')}
+      <button class="grp-btn all" data-action="pickGroup" data-g="all">Toute la classe</button></div>`;
+  }
   const list = sortedStudents().filter(s => present(n, s.id) && passFilter(s));
   const off = S.students.filter(s => !present(n, s.id)).length;
-  return `<div class="card strong"><b style="font-size:20px">Leçon ${n} ${L.title?'– '+esc(L.title):''}</b>
+  return `<div class="card strong"><div class="row"><b style="font-size:20px" class="grow">Leçon ${n} ${L.title?'– '+esc(L.title):''}</b>
+      ${nbGroups() > 1 ? `<button class="btn small" data-action="pickGroup" data-g="">${UI.filter && UI.filter !== 'all' ? '🎽 ' + groupName(UI.filter) + ' · changer' : '🎽 Changer de groupe'}</button>` : ''}</div>
       <div class="muted" style="font-weight:700">🏃 ${nbAtt(n,'s')} sprint(s) de ${fmt(S.settings.timeS)} s · 🏀 ${nbAtt(n,'b')} tir(s) basket · 1 point par plot atteint${off?` · ${off} absent(s)/inapte(s) masqué(s)`:''}</div></div>
-    ${filterBar()}
     <div class="tiles">${list.map(s => saisieTile(n, s)).join('') || '<p>Aucun élève dans ce groupe.</p>'}</div>`;
 }
 function tileTarget(n, sid, a){
@@ -499,7 +548,7 @@ function statsColumn(sid, a){
 }
 function viewStatsDetail(){
   const sid = UI.sid, s = student(sid); if (!s) return '';
-  const N = S.settings.nbLessons, col = colorOf(s.g), cur = curLesson();
+  const N = S.settings.nbLessons, col = groupColor(s.grp), cur = curLesson();
   const P = S.projects[sid] || {};
   const projRow = a => {
     const A_ = ACT[a], locked = lesson(N)[A_.man][sid] != null, lastTi = targetInfo(N, sid, a);
@@ -547,16 +596,17 @@ function openProf(){
     if (k === '⌫') code = code.slice(0,-1); else if (code.length < 4) code += k;
     dots.forEach((d,i)=>d.classList.toggle('f', i < code.length));
     if (code.length === 4) {
-      if (code === String(S.settings.pin || '0000')) { UI.profUnlocked = true; closeModal(); go('prof'); }
+      if (code === String(ROOT.pin || '0000')) { UI.profUnlocked = true; closeModal(); go('prof'); }
       else { toast('Code incorrect'); code=''; dots.forEach(d=>d.classList.remove('f')); }
     }
   });
 }
-const PROF_TABS = [['lecons','📅 Cycle & leçons'],['eleves','👥 Élèves'],['appel','✅ Appel'],['cibles','🎯 Cibles'],['groupes','🎽 Chasubles'],['partage','🔄 QR tablettes'],['export','📁 Export / Réglages']];
+const PROF_TABS = [['classes','🏫 Classes'],['lecons','📅 Cycle & leçons'],['eleves','👥 Élèves'],['appel','✅ Appel'],['cibles','🎯 Cibles'],['groupes','🎽 Groupes'],['partage','🔄 QR tablettes'],['export','📁 Export / Réglages']];
 function viewProf(){
   const t = UI.profTab;
   let body = '';
-  if (t === 'lecons') body = profLecons();
+  if (t === 'classes') body = profClasses();
+  else if (t === 'lecons') body = profLecons();
   else if (t === 'eleves') body = profEleves();
   else if (t === 'appel') body = profAppel();
   else if (t === 'cibles') body = profCibles();
@@ -564,6 +614,16 @@ function viewProf(){
   else if (t === 'partage') body = profPartage();
   else if (t === 'export') body = profExport();
   return `<div class="tabs">${PROF_TABS.map(([k,l])=>`<button class="tab ${t===k?'on':''}" data-action="profTab" data-tab="${k}">${l}</button>`).join('')}</div>${body}`;
+}
+function profClasses(){
+  const cls = Object.values(ROOT.classes);
+  return `<div class="card strong"><h2>Classe en cours</h2>
+      <div class="class-chips" style="justify-content:flex-start">${cls.map(c=>`<button class="class-chip ${c.id===S.id?'on':''}" data-action="selClass" data-id="${c.id}">🏫 ${esc(className(c))} <small style="font-weight:700">· ${c.students.length} él. · L${Math.min(c.settings.current||1, c.settings.nbLessons)}</small></button>`).join('')}</div></div>
+    <div class="card"><h2>Renommer « ${esc(className())} »</h2><div class="row">
+      <input type="text" data-field="className" value="${esc(S.settings.className)}" class="grow" style="max-width:420px"></div></div>
+    <div class="card"><h2>Nouvelle classe</h2><div class="row">
+      <input type="text" id="new-class" placeholder="2nde 4" style="max-width:420px"><button class="btn green" data-action="addClass">＋ Créer</button></div></div>
+    ${cls.length > 1 ? `<div class="card"><button class="btn small red" data-action="delClass">🗑 Supprimer « ${esc(className())} »</button></div>` : ''}`;
 }
 function afterProf(){ if (UI.profTab === 'groupes') bindGroups(); }
 
@@ -602,7 +662,6 @@ function profLecons(){
       
       <div class="lesson-picker">${Array.from({length:N},(_,i)=>i+1).map(n=>`<button class="lp ${n===cur?'on':''}" data-action="setCurrent" data-n="${n}">${n}</button>`).join('')}</div></div>
     <div class="card"><h2>Cycle</h2><div class="row">
-      <label class="field grow">Classe / groupe<input type="text" data-field="className" value="${esc(st.className)}" placeholder="Ex. : 2nde 4"></label>
       <div class="field">Nombre de leçons du cycle${stepper('nbLessons','',N)}</div></div></div>
     <div class="card strong"><h2>Tentatives (base de chaque leçon)</h2>
       
@@ -690,14 +749,17 @@ function profAppel(){
         <button class="btn ${a==='inap'?'inapte-on':''}" data-action="att" data-sid="${s.id}" data-v="inap">Inapte</button></div></div>`; }).join('')}</div>`;
 }
 function profGroupes(){
-  const zone = (k, label, colr) => {
-    const items = sortedStudents().filter(s => (s.g||'') === k);
-    return `<div class="gzone" data-zone="${k}"><h3 data-action="dropSel" data-zone="${k}">${colr?`<span class="dot" style="background:${colr}"></span>`:''}${label} <span class="muted">(${items.length})</span></h3>
-      <div class="gitems">${items.map(s=>`<div class="gitem ${UI.sel===s.id?'sel':''}" data-gid="${s.id}" style="${colr?`border-left:12px solid ${colr}`:''}">${esc(nameOf(s.id))}</div>`).join('')}</div></div>`;
+  const G = nbGroups();
+  const zone = (g, label) => {
+    const items = sortedStudents().filter(s => (s.grp||0) === g), c = g ? groupColor(g) : null;
+    const picker = g ? `<div class="gcolors">${COLORS.map(k => `<button class="gc ${S.settings.groupColors[g-1]===k.k?'on':''}" style="background:${k.c}" data-action="groupColor" data-g="${g}" data-c="${k.k}" aria-label="${k.n}"></button>`).join('')}</div>` : '';
+    return `<div class="gzone" data-zone="${g}"><h3 data-action="dropSel" data-zone="${g}">${c?`<span class="dot" style="background:${c.c}"></span>`:''}${label} <span class="muted">(${items.length})</span></h3>${picker}
+      <div class="gitems">${items.map(s=>`<div class="gitem ${UI.sel===s.id?'sel':''}" data-gid="${s.id}" style="${c?`border-left:12px solid ${c.c}`:''}">${esc(nameOf(s.id))}</div>`).join('')}</div></div>`;
   };
-  return `<div class="card strong"><h2>Groupes de chasubles</h2>
-      <button class="btn small ghost" data-action="clearGroups">Tout retirer</button></div>
-    <div class="groups">${zone('', 'Sans chasuble', null)}${COLORS.map(c=>zone(c.k, c.n, c.c)).join('')}</div>`;
+  return `<div class="card strong"><h2>Groupes · ${esc(className())}</h2>
+      <div class="lesson-picker">${[1,2,3,4].map(n=>`<button class="lp ${n===G?'on':''}" data-action="setGroups" data-n="${n}">${n}</button>`).join('')}</div>
+      ${G > 1 ? `<button class="btn small ghost" data-action="clearGroups" style="margin-top:10px">Tout retirer</button>` : ''}</div>
+    ${G > 1 ? `<div class="groups">${zone(0, 'Sans groupe')}${Array.from({length:G},(_,i)=>zone(i+1, groupName(i+1))).join('')}</div>` : ''}`;
 }
 function bindGroups(){
   let drag = null;
@@ -724,21 +786,23 @@ function bindGroups(){
       document.querySelectorAll('.gzone').forEach(z => z.classList.remove('hover'));
       if (!d.moved) { UI.sel = UI.sel === d.id ? null : d.id; render(); return; }
       const z = document.elementFromPoint(e.clientX, e.clientY)?.closest('.gzone');
-      if (z) { const s = student(d.id); s.g = z.dataset.zone || null; UI.sel = null; save(); }
+      if (z) { const s = student(d.id); s.grp = +z.dataset.zone || 0; UI.sel = null; save(); }
       render();
     };
     el.addEventListener('pointerup', end); el.addEventListener('pointercancel', end);
   });
 }
 function profPartage(){
-  return `<div class="card strong"><h2>1 · QR « Élèves »</h2>
-      <button class="btn primary" data-action="showQR" data-kind="N">📤 Afficher le QR Élèves</button></div>
-    <div class="card strong"><h2>2 · QR « Leçon ${curLesson()} »</h2>
-      <button class="btn primary" data-action="showQR" data-kind="L">📤 Afficher le QR Leçon ${curLesson()}</button></div>
-    <div class="card strong"><h2>3 · Récupérer les saisies</h2>
-      <button class="btn orange" data-action="scanResults">📷 Scanner une tablette</button></div>
-    <div class="card"><h2>Autres options</h2><div class="btn-row">
-      <button class="btn" data-action="showFullQR" data-light="0">Historique complet (plusieurs QR)</button>
+  const N = S.settings.nbLessons, cur = curLesson();
+  return `<div class="card strong"><h2>📷 Scanner</h2>
+      <button class="btn orange" data-action="go" data-view="receive" style="min-height:70px;font-size:22px">📷 Scanner un QR</button>
+      <div class="muted" style="font-weight:700;margin-top:6px">Élèves · Leçon · Saisies d'une tablette · Historique</div></div>
+    <div class="card strong"><h2>📤 Afficher un QR · ${esc(className())}</h2>
+      <div class="btn-row"><button class="btn primary" data-action="showQR" data-kind="N">👥 QR Élèves</button>
+        <button class="btn" data-action="showFullQR" data-light="0">🗂 QR Historique</button></div>
+      <h3 style="margin-top:14px">QR Leçon</h3>
+      <div class="lesson-picker">${Array.from({length:N},(_,i)=>i+1).map(n=>`<button class="lp ${n===cur?'on':''}" data-action="showQR" data-kind="L" data-n="${n}">${n}</button>`).join('')}</div></div>
+    <div class="card"><h2>Fichiers</h2><div class="btn-row">
       <button class="btn" data-action="fileFull">📤 Partager en fichier</button>
       <label class="btn">📂 Importer un fichier<input type="file" id="file-sync" accept=".json,application/json" hidden></label></div></div>`;
 }
@@ -753,7 +817,7 @@ function profExport(){
       <button class="btn" data-action="setPin" style="align-self:flex-end">Changer</button></div></div>
     <div class="card"><h2>Réinitialiser</h2><div class="btn-row">
       <button class="btn small ghost" data-action="clearResults">Effacer tous les résultats</button>
-      <button class="btn small red" data-action="resetAll">Tout effacer (nouveau cycle)</button></div>
+      <button class="btn small red" data-action="resetAll">Réinitialiser cette classe</button></div>
       <p class="muted" style="font-size:14px">Version ${APP_VERSION} · appareil ${esc(S.deviceId)}</p></div>`;
 }
 
@@ -827,7 +891,7 @@ function exportXlsx(){
   const N = S.settings.nbLessons;
   const num = v => v == null ? '' : v;
   const r2 = v => v == null ? '' : Math.round(v*100)/100;
-  const head = ['Nom', 'Prénom', 'Affiché', 'Chasuble'];
+  const head = ['Nom', 'Prénom', 'Affiché', 'Groupe'];
   for (let n = 1; n <= N; n++) head.push(`L${n} sprint cible`, `L${n} sprint moy.`, `L${n} basket cible`, `L${n} basket moy.`);
   head.push('Projet : cible sprint', 'Projet : cible basket', 'Projet : texte');
   const syn = [head];
@@ -836,7 +900,7 @@ function exportXlsx(){
     ...Array.from({length:maxA},(_,k)=>`Tentative ${k+1}`), 'Moyenne (points)', 'Meilleur (points)']];
   sortedStudents().forEach(s => {
     const nom = s.nom || '', pre = s.prenom || s.disp || '';
-    const row = [nom, pre, nameOf(s.id), colorOf(s.g)?.n || ''];
+    const row = [nom, pre, nameOf(s.id), nbGroups() > 1 && s.grp ? groupName(s.grp) : ''];
     for (let n = 1; n <= N; n++) {
       const at = attOf(n, s.id);
       ['s','b'].forEach(a => { const v = vals(perf(n, s.id, a));
@@ -874,22 +938,12 @@ function exportXlsx(){
 /* ---------------------------------------------------------------------
    Échanges : paquets, compression, QR codes
    --------------------------------------------------------------------- */
-function buildFull(light=false){
-  const cur = curLesson();
-  let results = S.results, fixed = null;
-  if (light) {                     // QR léger : cibles déjà calculées + résultats de la leçon en cours seulement
-    results = S.results[cur] ? { [cur]: S.results[cur] } : {};
-    fixed = { n: cur, t: {} };
-    S.students.forEach(st => { fixed.t[st.id] = [baseTarget(cur, st.id, 's'), baseTarget(cur, st.id, 'b')]; });
-  }
-  const lessons = JSON.parse(JSON.stringify(S.lessons));
-  if (light) Object.entries(lessons).forEach(([n, L]) => { if (+n !== cur) { delete L.manual; delete L.manualB; delete L.adjust; delete L.adjustB; delete L.att; } });
-  return { k:'full', light, from:S.deviceId, at:now(), st:{
-    settings:{ nbLessons:S.settings.nbLessons, current:cur, className:S.settings.className,
-      baseCourses:S.settings.baseCourses, baseTirs:S.settings.baseTirs, plotsS:S.settings.plotsS, plotsB:S.settings.plotsB, ecartS:S.settings.ecartS, ecartB:S.settings.ecartB,
-      firstS:S.settings.firstS, timeS:S.settings.timeS, firstB:S.settings.firstB, stepB:S.settings.stepB },
-    students: S.students.map(s => ({ id:s.id, disp:nameOf(s.id), g:s.g||null })),
-    lessons, fixed, results, projects: light ? {} : S.projects } };
+function buildFull(){
+  const st = { ...S.settings, current: curLesson() };
+  return { k:'full', cid:S.id, from:S.deviceId, at:now(), st:{
+    settings: st,
+    students: S.students.map(s => ({ id:s.id, disp:nameOf(s.id), grp:s.grp||0 })),
+    lessons: S.lessons, results: S.results, projects: S.projects } };
 }
 function buildMine(){
   const results = {}, projects = {};
@@ -897,7 +951,7 @@ function buildMine(){
   Object.entries(S.results).forEach(([n, byS]) => Object.entries(byS).forEach(([sid, r]) => {
     if (r.d === S.deviceId) { (results[n] = results[n] || {})[sid] = r; count++; } }));
   Object.entries(S.projects).forEach(([sid, p]) => { if (p.d === S.deviceId) { projects[sid] = p; count++; } });
-  return { pkt: { k:'res', from:S.deviceId, at:now(), results, projects }, count };
+  return { pkt: { k:'res', cid:S.id, from:S.deviceId, at:now(), results, projects }, count };
 }
 function mergeData(results, projects){
   let n = 0;
@@ -912,52 +966,62 @@ function mergeData(results, projects){
   });
   return n;
 }
+/* Classe visée par un QR : même identifiant sur tous les appareils (créée si besoin) */
+function targetClass(cid, name, create){
+  if (cid && ROOT.classes[cid]) return ROOT.classes[cid];
+  if (cid && create) { const c = newClassState(name || 'Classe', cid); ROOT.classes[cid] = c; return c; }
+  return S;
+}
+const hasFullNames = c => c.students.some(s => s.nom);
+function mergeInto(c, results, projects){ const prev = S.id; useClass(c.id); const n = mergeData(results, projects); useClass(prev); return n; }
 async function applyPacket(p){
   if (!p || !p.k) throw new Error('Données non reconnues');
+  if (p.k === 'res') {
+    const c = targetClass(p.cid, null, false);
+    const n = mergeInto(c, p.results, p.projects);
+    save(); toast(`✓ ${className(c)} · tablette ${p.from} : ${n} saisie(s) récupérée(s)`, 3500);
+    return n;
+  }
   if (p.k === 'full') {
-    const st = p.st;
-    if (S.students.some(s => s.nom) && p.from !== S.deviceId) {
-      const ok = await confirmBox('Remplacer la liste de cet appareil ?', 'Cet appareil contient une liste d\'élèves complète (enseignant). La leçon reçue la remplacera par les prénoms seuls.', 'Remplacer', true);
-      if (!ok) return;
+    const st = p.st, c = targetClass(p.cid, st.settings.className, true);
+    if (hasFullNames(c)) {                                   // appareil enseignant : on récupère seulement les performances
+      const n = mergeInto(c, st.results, st.projects); save(); toast(`✓ Historique ${className(c)} : ${n} saisie(s) récupérée(s)`, 3500); return n;
     }
-    const pin = S.settings.pin; S.settings = { ...DEFAULT_SETTINGS, ...st.settings, pin };
-    S.students = st.students.map(s => ({ id:s.id, disp:s.disp, g:s.g }));
+    useClass(c.id);
+    S.settings = normClass({ settings:{ ...st.settings } }).settings;
+    S.students = st.students.map(s => ({ id:s.id, disp:s.disp, grp:s.grp||0 }));
     S.lessons = st.lessons || {};
-    if (st.fixed) { const L = lesson(st.fixed.n); L.fixedS = {}; L.fixedB = {};
-      Object.entries(st.fixed.t).forEach(([sid, [a, b]]) => { if (a != null) L.fixedS[sid] = a; if (b != null) L.fixedB[sid] = b; }); }
     const n = mergeData(st.results, st.projects);
-    save(); toast(`✓ Leçon ${st.settings.current} reçue : ${S.students.length} élèves`, 3000);
-    go('home');
+    save(); toast(`✓ Historique ${className()} reçu`, 3000); go('home');
     return n;
   }
   if (p.k === 'names') {
-    if (S.students.some(s => s.nom)) {
-      const ok = await confirmBox('Remplacer la liste de cet appareil ?', 'Cet appareil contient la liste complète (enseignant).', 'Remplacer', true);
-      if (!ok) return;
-    }
-    S.students = p.students.map(s => ({ id:s.id, disp:s.disp, g:s.g }));
-    if (p.className != null) S.settings.className = p.className;
-    save(); toast(`✓ ${S.students.length} élèves reçus`, 3000);
+    const c = targetClass(p.cid, p.className, true);
+    if (hasFullNames(c) && !(await confirmBox('Remplacer la liste ?', 'Cet appareil contient la liste complète de ' + esc(className(c)) + '.', 'Remplacer', true))) return 'continue';
+    useClass(c.id);
+    S.students = p.students.map(s => ({ id:s.id, disp:s.disp, grp:s.grp||0 }));
+    if (p.className) S.settings.className = p.className;
+    if (p.nbGroups) { S.settings.nbGroups = p.nbGroups; S.settings.groupColors = p.groupColors; }
+    if (p.pin) ROOT.pin = p.pin;
+    save(); toast(`✓ ${className()} : ${S.students.length} élèves reçus`, 3000);
     return 'continue';
   }
   if (p.k === 'lesson') {
-    if (S.students.some(s => s.nom)) throw new Error('QR Leçon : à scanner sur les tablettes des élèves');
-    const list = S.students;                      // même ordre que le QR « Élèves »
+    const c = targetClass(p.cid, null, false);
+    if (hasFullNames(c)) throw new Error('QR Leçon : à scanner sur les tablettes des élèves');
+    const list = c.students;                      // même ordre que le QR « Élèves »
     if (!list.length || listHash(list.map(s => s.id)) !== p.hash) { toast('⚠️ Scannez d\'abord le QR « Élèves »', 4000); throw new Error('Liste des élèves différente'); }
-    const pin = S.settings.pin; S.settings = { ...S.settings, ...p.settings, pin };
+    useClass(c.id);
+    S.settings = { ...S.settings, ...p.settings };
+    if (p.groupColors) S.settings.groupColors = p.groupColors;
     const L = lesson(p.settings.current);
     L.title = p.title; L.nbCourses = p.nbC; L.nbTirs = p.nbT;
     L.fixedS = {}; L.fixedB = {}; L.manual = {}; L.manualB = {}; L.adjust = {}; L.adjustB = {}; L.att = {};
     list.forEach((s, i) => { const r = p.rows[i]; if (!r) return;
       if (r.tS != null) L.fixedS[s.id] = r.tS; if (r.tB != null) L.fixedB[s.id] = r.tB;
-      if (r.aS) L.adjust[s.id] = r.aS; if (r.aB) L.adjustB[s.id] = r.aB; if (r.att) L.att[s.id] = r.att; s.g = r.g; });
-    save(); toast(`✓ Leçon ${p.settings.current} reçue`, 3000); go('home');
-    return 1;
-  }
-  if (p.k === 'res') {
-    const n = mergeData(p.results, p.projects);
-    save(); toast(`✓ Tablette ${p.from} : ${n} saisie(s) nouvelle(s) ou mise(s) à jour`, 3500);
-    return n;
+      if (r.aS) L.adjust[s.id] = r.aS; if (r.aB) L.adjustB[s.id] = r.aB; if (r.att) L.att[s.id] = r.att; s.grp = r.grp || 0; });
+    save(); toast(`✓ ${className()} · leçon ${p.settings.current} reçue`, 3000);
+    return 'continue';
   }
   throw new Error('Type de données inconnu');
 }
@@ -985,28 +1049,32 @@ const GKEY = i => i ? COLORS[i-1]?.k || null : null;
 const NUL = 255, nv = v => v == null ? NUL : Math.max(0, Math.min(254, v)), vn = v => v === NUL ? null : v;
 
 function binNames(){
-  const w = BW(); w.u8('N'.charCodeAt(0)); w.u8(1);
-  w.str(S.settings.className, 60); w.u8(S.students.length);
-  sortedStudents().forEach(s => { w.id(s.id); w.u8(GIDX(s.g)); w.str(nameOf(s.id), 40); });
+  const w = BW(); w.u8('N'.charCodeAt(0)); w.u8(2);
+  w.id(S.id); w.str(S.settings.className, 60); w.str(ROOT.pin, 8);
+  w.u8(nbGroups()); S.settings.groupColors.forEach(k => w.u8(GIDX(k)));
+  w.u8(S.students.length);
+  sortedStudents().forEach(s => { w.id(s.id); w.u8(s.grp||0); w.str(nameOf(s.id), 40); });
   return w.bytes();
 }
-function binLesson(){
-  const cur = curLesson(), L = lesson(cur), st = S.settings, list = sortedStudents();
-  const w = BW(); w.u8('L'.charCodeAt(0)); w.u8(2);
+function binLesson(n){
+  const cur = n || curLesson(), L = lesson(cur), st = S.settings, list = sortedStudents();
+  const w = BW(); w.u8('L'.charCodeAt(0)); w.u8(3);
+  w.id(S.id);
   w.u32(listHash(list.map(s => s.id)));
   [st.nbLessons, cur, st.baseCourses, st.baseTirs, st.plotsS, st.plotsB, st.ecartS, st.ecartB, nbAtt(cur,'s'), nbAtt(cur,'b')].forEach(v => w.u8(v));
   w.u8(st.firstS); w.u8(Math.round(st.timeS*10)); w.u8(Math.round(st.firstB*2)); w.u8(Math.round(st.stepB*2));
+  w.u8(nbGroups()); st.groupColors.forEach(k => w.u8(GIDX(k)));
   w.str(L.title, 80); w.u8(list.length);
   list.forEach(s => {
     const aS = +(L.adjust[s.id]||0), aB = +(L.adjustB[s.id]||0), at = attOf(cur, s.id);
     w.u8(nv(baseTarget(cur, s.id, 's'))); w.u8(nv(baseTarget(cur, s.id, 'b')));
     w.u8((aS<0?1:aS>0?2:0) | ((aB<0?1:aB>0?2:0)<<2) | ((at==='abs'?1:at==='inap'?2:0)<<4));
-    w.u8(GIDX(s.g));
+    w.u8(s.grp||0);
   });
   return w.bytes();
 }
 function binResults(){
-  const w = BW(); w.u8('R'.charCodeAt(0)); w.u8(1); w.id(S.deviceId);
+  const w = BW(); w.u8('R'.charCodeAt(0)); w.u8(2); w.id(S.deviceId); w.id(S.id);
   const ents = [], projs = [];
   Object.entries(S.results).forEach(([n, byS]) => Object.entries(byS).forEach(([sid, r]) => { if (r.d === S.deviceId) ents.push([+n, sid, r]); }));
   Object.entries(S.projects).forEach(([sid, p]) => { if (p.d === S.deviceId) projs.push([sid, p]); });
@@ -1019,22 +1087,30 @@ function binResults(){
 }
 function binDecode(u){
   const r = BR(u), t = String.fromCharCode(r.u8()), ver = r.u8();
+  const colors = () => [r.u8(), r.u8(), r.u8(), r.u8()].map(i => GKEY(i) || 'rouge');
   if (t === 'N') {
-    const className = r.str(), n = r.u8(), students = [];
-    for (let i = 0; i < n; i++) { const id = r.id(), g = GKEY(r.u8()), disp = r.str(); students.push({ id, disp, g }); }
-    return { k:'names', className, students };
+    let cid = null, pin = null, nbGroups = 0, groupColors = null;
+    if (ver >= 2) cid = r.id();
+    const className = r.str();
+    if (ver >= 2) { pin = r.str(); nbGroups = r.u8(); groupColors = colors(); }
+    const n = r.u8(), students = [];
+    for (let i = 0; i < n; i++) { const id = r.id(), g = r.u8(), disp = r.str(); students.push({ id, disp, grp: ver >= 2 ? g : 0 }); }
+    return { k:'names', cid, className, pin, nbGroups, groupColors, students };
   }
   if (t === 'L') {
+    const cid = ver >= 3 ? r.id() : null;
     const hash = r.u32(); const v = []; for (let i = 0; i < 10; i++) v.push(r.u8());
     const bar = ver >= 2 ? { firstS: r.u8(), timeS: r.u8()/10, firstB: r.u8()/2, stepB: r.u8()/2 } : {};
+    let grp = {}, groupColors = null;
+    if (ver >= 3) { grp.nbGroups = r.u8(); groupColors = colors(); }
     const title = r.str(), n = r.u8(), rows = [];
-    for (let i = 0; i < n; i++) { const tS = vn(r.u8()), tB = vn(r.u8()), f = r.u8(), g = GKEY(r.u8());
-      rows.push({ tS, tB, aS: [0,-1,1][f&3], aB: [0,-1,1][(f>>2)&3], att: [null,'abs','inap'][(f>>4)&3], g }); }
+    for (let i = 0; i < n; i++) { const tS = vn(r.u8()), tB = vn(r.u8()), f = r.u8(), g = r.u8();
+      rows.push({ tS, tB, aS: [0,-1,1][f&3], aB: [0,-1,1][(f>>2)&3], att: [null,'abs','inap'][(f>>4)&3], grp: ver >= 3 ? g : 0 }); }
     const [nbLessons, current, baseCourses, baseTirs, plotsS, plotsB, ecartS, ecartB, nbC, nbT] = v;
-    return { k:'lesson', hash, settings:{ nbLessons, current, baseCourses, baseTirs, plotsS, plotsB, ecartS, ecartB, ...bar }, nbC, nbT, title, rows };
+    return { k:'lesson', cid, hash, groupColors, settings:{ nbLessons, current, baseCourses, baseTirs, plotsS, plotsB, ecartS, ecartB, ...bar, ...grp }, nbC, nbT, title, rows };
   }
   if (t === 'R') {
-    const from = r.id(), n = r.u16(), results = {}, projects = {};
+    const from = r.id(), cid = ver >= 2 ? r.id() : null, n = r.u16(), results = {}, projects = {};
     for (let i = 0; i < n; i++) { const sid = r.id(), les = r.u8(), ts = r.u32()*1000;
       const nc = r.u8(), c = []; for (let k = 0; k < nc; k++) c.push(vn(r.u8()));
       const nb = r.u8(), b = []; for (let k = 0; k < nb; k++) b.push(vn(r.u8()));
@@ -1042,7 +1118,7 @@ function binDecode(u){
     const np = r.u8();
     for (let i = 0; i < np; i++) { const sid = r.id(), cS = vn(r.u8()), cB = vn(r.u8()), ts = r.u32()*1000, texte = r.str(true);
       projects[sid] = { cibleS:cS, cibleB:cB, texte, ts, d: from }; }
-    return { k:'res', from, results, projects };
+    return { k:'res', from, cid, results, projects };
   }
   throw new Error('QR inconnu');
 }
@@ -1412,9 +1488,14 @@ async function importSyncFile(file){
   try {
     const obj = JSON.parse(await file.text());
     if (obj.k) await applyPacket(obj);
-    else if (obj.settings && obj.students) {
-      if (!(await confirmBox('Restaurer la sauvegarde ?', 'Toutes les données de cet appareil seront remplacées.', 'Restaurer', true))) return;
-      const dev = S.deviceId; S = obj; S.deviceId = dev; save(); toast('✓ Sauvegarde restaurée'); go('home');
+    else if (obj.classes) {
+      if (!(await confirmBox('Restaurer la sauvegarde ?', 'Toutes les classes de cet appareil seront remplacées.', 'Restaurer', true))) return;
+      const dev = ROOT.deviceId; ROOT = obj; ROOT.deviceId = dev; Object.values(ROOT.classes).forEach(normClass);
+      useClass(ROOT.classes[ROOT.active] ? ROOT.active : Object.keys(ROOT.classes)[0]); save(); toast('✓ Sauvegarde restaurée'); go('home');
+    }
+    else if (obj.settings && obj.students) {                  // sauvegarde d'une ancienne version (une seule classe)
+      const c = normClass({ ...obj, id: rnd(4) }); delete c.v; if (!c.settings.className) c.settings.className = 'Classe importée';
+      ROOT.classes[c.id] = c; useClass(c.id); save(); toast('✓ Classe importée'); go('home');
     } else throw new Error('Fichier non reconnu');
     render();
   } catch(e){ toast('⚠️ ' + e.message, 3500); }
@@ -1427,7 +1508,15 @@ const A = {
   go: d => go(d.view),
   openProf: () => openProf(),
   profTab: d => { UI.profTab = d.tab; UI.sel = null; render(); },
-  filter: d => { UI.filter = d.g || null; render(); },
+  filter: d => { UI.filter = d.g ? +d.g : null; render(); },
+  goSaisie: () => { UI.filter = null; go('saisie'); },
+  pickGroup: d => { UI.filter = d.g === 'all' ? 'all' : d.g ? +d.g : null; go('saisie'); },
+  selClass: d => { useClass(d.id); UI.filter = null; save(); render(); },
+  addClass: () => { const name = ($('#new-class').value || '').trim(); if (!name) return toast('Nom de la classe ?');
+    const c = newClassState(name); ROOT.classes[c.id] = c; useClass(c.id); save(); toast('✓ ' + name + ' créée'); render(); },
+  delClass: async () => { if (Object.keys(ROOT.classes).length < 2) return;
+    if (!(await confirmBox('Supprimer « ' + className() + ' » ?', 'Élèves, leçons et résultats de cette classe seront effacés de cet appareil.', 'Supprimer', true))) return;
+    delete ROOT.classes[S.id]; useClass(Object.keys(ROOT.classes)[0]); save(); render(); },
   entry: d => { if (d.sid) go('entry', { sid: d.sid }); },
   statsDetail: d => go('statsDetail', { sid: d.sid }),
 
@@ -1471,19 +1560,22 @@ const A = {
   resetTarget: d => { delete lesson(curLesson())[ACT[d.a].man][d.sid]; save(); render(); },
 
   // prof : groupes
-  dropSel: d => { if (!UI.sel) return; const s = student(UI.sel); if (s) { s.g = d.zone || null; save(); } UI.sel = null; render(); },
-  clearGroups: () => { S.students.forEach(s => s.g = null); save(); render(); },
+  dropSel: d => { if (!UI.sel) return; const s = student(UI.sel); if (s) { s.grp = +d.zone || 0; save(); } UI.sel = null; render(); },
+  clearGroups: () => { S.students.forEach(s => s.grp = 0); save(); render(); },
+  setGroups: d => { S.settings.nbGroups = +d.n; S.students.forEach(s => { if (s.grp > +d.n) s.grp = 0; }); UI.filter = null; save(); render(); },
+  groupColor: d => { S.settings.groupColors[+d.g - 1] = d.c; save(); render(); },
 
   // prof : partage
   showQR: async d => {
-    const bytes = d.kind === 'N' ? binNames() : binLesson();
+    const ln = +(d.n || curLesson());
+    const bytes = d.kind === 'N' ? binNames() : binLesson(ln);
     const parts = chunkQR(await encodeBin(bytes), d.kind, 260);
     const m = modal(`<div id="qr-modal"></div><div class="btn-row" style="justify-content:center;margin-top:10px"><button class="btn primary" data-close>Fermer</button></div>`, { wide:true });
     m.querySelector('[data-close]').onclick = closeModal;
-    showQRSeries(parts, m.querySelector('#qr-modal'), d.kind === 'N' ? 'Élèves' : `Leçon ${curLesson()}`);
+    showQRSeries(parts, m.querySelector('#qr-modal'), (d.kind === 'N' ? 'Élèves' : `Leçon ${ln}`) + ' · ' + esc(className()));
   },
   showFullQR: async d => {
-    const payload = await encodePacket(buildFull(d.light === '1'));
+    const payload = await encodePacket(buildFull());
     const parts = chunkQR(payload, 'F');
     const m = modal(`<div id="qr-modal"></div><div class="btn-row" style="justify-content:center;margin-top:10px"><button class="btn primary" data-close>Fermer</button></div>`, { wide:true });
     m.querySelector('[data-close]').onclick = closeModal;
@@ -1499,11 +1591,11 @@ const A = {
 
   // export / réglages
   exportXlsx: () => exportXlsx(),
-  backup: () => downloadJSON(S, `Biathlon5s_sauvegarde_${new Date().toISOString().slice(0,10)}.json`),
-  setPin: () => { const v = $('#new-pin').value.trim(); if (!/^\d{4}$/.test(v)) return toast('4 chiffres requis'); S.settings.pin = v; save(); $('#new-pin').value=''; toast('✓ Code modifié'); },
+  backup: () => downloadJSON(ROOT, `Biathlon_sauvegarde_${new Date().toISOString().slice(0,10)}.json`),
+  setPin: () => { const v = $('#new-pin').value.trim(); if (!/^\d{4}$/.test(v)) return toast('4 chiffres requis'); ROOT.pin = v; save(); $('#new-pin').value=''; toast('✓ Code modifié'); },
   clearResults: async () => { if (await confirmBox('Effacer tous les résultats ?', 'Performances, tirs et projets seront supprimés (la liste et les leçons restent).', 'Effacer', true)) { S.results = {}; S.projects = {}; save(); render(); } },
-  resetAll: async () => { if (await confirmBox('Tout effacer ?', 'Élèves, leçons, résultats : cet appareil repart à zéro (le code enseignant est conservé).', 'Tout effacer', true)) {
-    const pin = S.settings.pin, dev = S.deviceId; S = defaultState(); S.settings.pin = pin; S.deviceId = dev; save(); go('home'); } },
+  resetAll: async () => { if (await confirmBox('Effacer « ' + className() + ' » ?', 'Élèves, leçons et résultats de cette classe repartent à zéro.', 'Tout effacer', true)) {
+    const c = newClassState(className(), S.id); ROOT.classes[S.id] = c; useClass(c.id); save(); go('home'); } },
 };
 
 document.addEventListener('click', e => {
@@ -1517,7 +1609,7 @@ document.addEventListener('change', e => {
   if (t.id === 'file-students' && t.files[0]) { importStudentsFile(t.files[0]); t.value=''; return; }
   if ((t.id === 'file-sync' || t.id === 'file-restore') && t.files[0]) { importSyncFile(t.files[0]); t.value=''; return; }
   const f = t.dataset.field; if (!f) return;
-  if (f === 'className') { S.settings.className = t.value.trim(); save(); }
+  if (f === 'className') { S.settings.className = t.value.trim() || 'Classe'; save(); render(); }
   if (f === 'title') { lesson(t.dataset.n).title = t.value.trim(); save(); }
   if (f === 'att') { const L = lesson(t.dataset.n), a = t.dataset.a, v = +t.value;
     if (v === +S.settings[ACT[a].base]) delete L[ACT[a].att]; else L[ACT[a].att] = v; save(); render(); }

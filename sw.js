@@ -1,6 +1,6 @@
 /* Service worker – Biathlon 5 s – N'EPS numérique – Quentin Delisle et Gwilherm Rocher
    Réseau d'abord (toujours la dernière version quand on est connecté), cache si hors-ligne. */
-const CACHE = 'biathlon5s-v4.3.0';
+const CACHE = 'biathlon5s-v5.0.0';
 const ASSETS = ['./', './index.html', './styles.css', './app.js', './manifest.webmanifest', './logo-app.png',
   './icons/icon-180.png', './icons/icon-192.png', './icons/icon-512.png', './icons/icon-maskable-512.png',
   './lib/qrcode.js', './lib/jsQR.js', './lib/zxing-reader.js', './lib/zxing_reader.wasm', './lib/xlsx.full.min.js'];

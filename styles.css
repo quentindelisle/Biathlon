@@ -298,3 +298,14 @@ select[disabled]{opacity:.7}
 #app-version{position:fixed;left:10px;bottom:calc(6px + var(--safe-b));z-index:30;background:rgba(255,255,255,.95);border:2px solid var(--navy);
   color:var(--navy);border-radius:999px;padding:3px 12px;font-size:13px!important;font-weight:900!important;pointer-events:none}
 .dial.big{width:255px;height:255px;max-width:100%}
+.gcolors{display:flex;flex-wrap:wrap;gap:6px;margin:0 0 10px}
+.gc{width:30px;height:30px;border-radius:50%;border:3px solid rgba(10,22,51,.35)}
+.gc.on{border:4px solid var(--ink);box-shadow:0 0 0 3px var(--orange)}
+.class-chips{display:flex;flex-wrap:wrap;gap:10px;justify-content:center}
+.class-chip{min-height:56px;padding:6px 22px;border-radius:14px;border:3px solid var(--navy);background:#fff;font-weight:900;font-size:20px;color:var(--navy)}
+.class-chip.on{background:var(--navy);color:#fff}
+.grp-pick{display:grid;grid-template-columns:repeat(2,1fr);gap:16px;max-width:760px;margin:0 auto}
+.grp-btn{min-height:140px;border-radius:20px;border:4px solid var(--navy);background:#fff;font-size:28px;font-weight:900;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:6px;position:relative;overflow:hidden}
+.grp-btn .sw{position:absolute;left:0;right:0;top:0;height:22px}
+.grp-btn small{font-size:16px;color:var(--grey)}
+.grp-btn.all{grid-column:1/-1;min-height:80px;font-size:22px}
