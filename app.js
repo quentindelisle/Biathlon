@@ -10,7 +10,7 @@
    ===================================================================== */
 'use strict';
 
-const APP_VERSION = '5.1.0';
+const APP_VERSION = '5.1.1';
 const STORE_KEY = 'neps_biathlon5s_v2';
 const QR_CHUNK = 440;           // caractères base45 par QR (QR version 11 max : facile à lire par une caméra)
 
@@ -655,7 +655,7 @@ function profLecons(){
   }
   return `<div class="card strong compact"><h2>Paramètres du cycle</h2>
       <div class="cgrid">
-        <div class="rf"><div class="rf-h"><span class="rf-l">📅 Leçons du cycle</span></div>${stepper('nbLessons','',N)}</div>
+        <div class="rf"><div class="rf-h"><span class="rf-l">📅 Nb leçons</span></div>${stepper('nbLessons','',N)}</div>
         ${rangeField(`🏃 Sprints / leçon`, st.baseCourses, 'data-field="set" data-k="baseCourses"', 1, 10)}
         ${rangeField('🏀 Tirs / leçon', st.baseTirs, 'data-field="set" data-k="baseTirs"', 1, 10)}
       </div>
@@ -672,7 +672,7 @@ function profLecons(){
         ${rangeField('Points max', st.plotsB, 'data-field="set" data-k="plotsB"', 1, 20)}
       </div>
       <details><summary style="font-weight:900;cursor:pointer">📏 Mise en place des plots</summary>${plotTable()}</details></div>
-    <div class="card strong compact"><h2>Leçon en cours</h2>
+    <div class="card strong compact"><h2>Leçon du jour</h2>
       <div class="lesson-picker">${Array.from({length:N},(_,i)=>i+1).map(n=>`<button class="lp ${n===cur?'on':''}" data-action="setCurrent" data-n="${n}">${n}</button>`).join('')}</div></div>
     <div class="card compact"><h2>Leçons</h2>${rows}</div>`;
 }
