@@ -10,7 +10,7 @@
    ===================================================================== */
 'use strict';
 
-const APP_VERSION = '5.1.1';
+const APP_VERSION = '6.0.0';
 const STORE_KEY = 'neps_biathlon5s_v2';
 const QR_CHUNK = 440;           // caractères base45 par QR (QR version 11 max : facile à lire par une caméra)
 
@@ -103,7 +103,7 @@ function save(){
   computeNames();
 }
 
-const UI = { view:'home', profTab:'lecons', profUnlocked:false, filter:null, sid:null, back:null, sel:null };
+const UI = { view:'home', profTab:'menu', profUnlocked:false, filter:null, sid:null, back:null, sel:null };
 
 /* ---------------------------------------------------------------------
    Utilitaires
@@ -186,7 +186,7 @@ function lesson(n){
   if (L.title == null) L.title = '';
   if (L.source == null || L.source === 'test') L.source = (L.source === 'test' && n === 2) ? 1 : 'prev';   // reprise des anciennes données
   if (L.calc == null) L.calc = 'max';
-  ['manual','adjust','manualB','adjustB','att'].forEach(k => { L[k] = L[k] || {}; });
+  ['manual','adjust','manualB','adjustB','att','grpOv'].forEach(k => { L[k] = L[k] || {}; });
   return L;
 }
 const curLesson = () => Math.min(S.settings.current || 1, S.settings.nbLessons);
@@ -376,7 +376,9 @@ function viewHome(){
 const nbGroups = () => Math.max(1, Math.min(4, +S.settings.nbGroups || 1));
 const groupColor = g => (g >= 1 && g <= nbGroups() && nbGroups() > 1) ? colorOf(S.settings.groupColors[g-1]) : null;
 const groupName = g => `Groupe ${g}`;
-function band(sid){ const c = groupColor(student(sid)?.grp); return c ? `<span class="band" style="background:${c.c};box-shadow:inset -2px 0 0 rgba(0,0,0,.35)"></span>` : '<span class="band"></span>'; }
+/* Groupe d'un élève pour une leçon : groupe habituel, sauf changement pour ce jour-là */
+function grpOf(sid, n){ const L = lesson(n || curLesson()), ov = L.grpOv[sid]; return ov != null ? +ov : (student(sid)?.grp || 0); }
+function band(sid){ const c = groupColor(grpOf(sid)); return c ? `<span class="band" style="background:${c.c};box-shadow:inset -2px 0 0 rgba(0,0,0,.35)"></span>` : '<span class="band"></span>'; }
 function filterBar(){
   if (nbGroups() < 2) return '';
   return `<div class="filters">
@@ -385,7 +387,7 @@ function filterBar(){
       return `<button class="chip ${UI.filter===g?'on':''}" data-action="filter" data-g="${g}"><span class="dot" style="background:${c?c.c:'#fff'}"></span>${groupName(g)}</button>`; }).join('')}
   </div>`;
 }
-const passFilter = s => !UI.filter || UI.filter === 'all' || (s.grp||0) === UI.filter;
+const passFilter = s => !UI.filter || UI.filter === 'all' || grpOf(s.id) === UI.filter;
 
 /* ---------------------------------------------------------------------
    Saisie : tuiles de la leçon en cours
@@ -395,7 +397,7 @@ function viewSaisie(){
   if (!S.students.length) return `<div class="card strong center">Aucun élève. Recevez la leçon du professeur (QR) depuis l'accueil.</div>`;
   if (nbGroups() > 1 && !UI.filter) {
     return `<div class="grp-pick">${Array.from({length:nbGroups()},(_,i)=>i+1).map(g => { const c = groupColor(g);
-      const nb = S.students.filter(x => (x.grp||0) === g && present(n, x.id)).length;
+      const nb = S.students.filter(x => grpOf(x.id, n) === g && present(n, x.id)).length;
       return `<button class="grp-btn" data-action="pickGroup" data-g="${g}"><span class="sw" style="background:${c?c.c:'#ccc'}"></span>${groupName(g)}<small>${nb} élève(s)</small></button>`; }).join('')}
       <button class="grp-btn all" data-action="pickGroup" data-g="all">Toute la classe</button></div>`;
   }
@@ -548,7 +550,7 @@ function statsColumn(sid, a){
 }
 function viewStatsDetail(){
   const sid = UI.sid, s = student(sid); if (!s) return '';
-  const N = S.settings.nbLessons, col = groupColor(s.grp), cur = curLesson();
+  const N = S.settings.nbLessons, col = groupColor(grpOf(s.id)), cur = curLesson();
   const P = S.projects[sid] || {};
   const projRow = a => {
     const A_ = ACT[a], locked = lesson(N)[A_.man][sid] != null, lastTi = targetInfo(N, sid, a);
@@ -601,31 +603,78 @@ function openProf(){
     }
   });
 }
-const PROF_TABS = [['classes','🏫 Classes'],['lecons','📅 Cycle & leçons'],['eleves','👥 Élèves'],['appel','✅ Appel'],['cibles','🎯 Cibles'],['groupes','🎽 Groupes'],['partage','🔄 QR tablettes'],['export','📁 Export / Réglages']];
+/* ---------------------------------------------------------------------
+   Espace enseignant : menu principal + 4 rubriques
+   --------------------------------------------------------------------- */
+const PROF_PARENT = { classes:'menu', groupes:'menu', cycle:'menu', lecon:'menu', appel:'menu', lgroupes:'menu', cibles:'menu', export:'menu' };
+function classPicker(){
+  const cls = Object.values(ROOT.classes);
+  return `<div class="class-chips" style="justify-content:flex-start">${cls.map(c=>`<button class="class-chip ${c.id===S.id?'on':''}" data-action="selClass" data-id="${c.id}">🏫 ${esc(className(c))}</button>`).join('')}</div>`;
+}
+function subTabs(items){
+  return `<div class="tabs">${items.map(([k,l])=>`<button class="tab ${UI.profTab===k?'on':''}" data-action="profTab" data-tab="${k}">${l}</button>`).join('')}</div>`;
+}
 function viewProf(){
-  const t = UI.profTab;
+  let t = UI.profTab || 'menu';
+  if (t === 'lecon') t = UI.profTab = 'appel';
+  if (t === 'classes' && false) t = 'classes';
   let body = '';
-  if (t === 'classes') body = profClasses();
-  else if (t === 'lecons') body = profLecons();
-  else if (t === 'eleves') body = profEleves();
-  else if (t === 'appel') body = profAppel();
-  else if (t === 'cibles') body = profCibles();
-  else if (t === 'groupes') body = profGroupes();
-  else if (t === 'partage') body = profPartage();
-  else if (t === 'export') body = profExport();
-  return `<div class="tabs">${PROF_TABS.map(([k,l])=>`<button class="tab ${t===k?'on':''}" data-action="profTab" data-tab="${k}">${l}</button>`).join('')}</div>${body}`;
+  if (t === 'menu') return profMenu();
+  if (t === 'classes' || t === 'groupes') {
+    body = `<div class="card strong compact"><h2>🏫 Classes</h2>${classPicker()}</div>
+      ${subTabs([['classes','👥 Classe & élèves'],['groupes','🎽 Groupes']])}
+      ${t === 'classes' ? profClasses() + profEleves() : profGroupes()}`;
+  } else if (t === 'cycle') {
+    body = `<div class="card strong compact"><h2>⚙️ Paramètres du cycle</h2>${classPicker()}</div>${profCycle()}`;
+  } else if (['appel','lgroupes','cibles'].includes(t)) {
+    const N = S.settings.nbLessons, cur = curLesson();
+    body = `<div class="card strong compact"><h2>📅 Leçon</h2>${classPicker()}
+        <h3>Leçon du jour</h3><div class="lesson-picker">${Array.from({length:N},(_,i)=>i+1).map(n=>`<button class="lp ${n===cur?'on':''}" data-action="setCurrent" data-n="${n}">${n}</button>`).join('')}</div></div>
+      ${subTabs([['appel','✅ Appel'],['lgroupes','🎽 Modifier les groupes'],['cibles','🎯 Cibles']])}
+      ${t === 'appel' ? profAppel() : t === 'lgroupes' ? profDayGroups() : profCibles()}`;
+  } else if (t === 'export') {
+    body = profPartage() + profExport();
+  }
+  return `<div class="btn-row" style="margin-bottom:10px"><button class="btn small" data-action="profTab" data-tab="menu">← Menu enseignant</button></div>${body}`;
+}
+function profMenu(){
+  const n = curLesson(), pres = S.students.filter(s => present(n, s.id)).length;
+  return `<div class="card strong compact center"><b style="font-size:20px">🏫 ${esc(className())}</b> · Leçon ${n}/${S.settings.nbLessons} · ${pres}/${S.students.length} présent(s)</div>
+    <div class="pmenu">
+      <button class="pm-btn" data-action="profTab" data-tab="classes"><span class="ico">🏫</span>Classes<small>Classes · élèves · groupes</small></button>
+      <button class="pm-btn" data-action="profTab" data-tab="cycle"><span class="ico">⚙️</span>Paramètres du cycle<small>Leçons · sprints · lancers · plots</small></button>
+      <button class="pm-btn" data-action="profTab" data-tab="appel"><span class="ico">📅</span>Leçon<small>Appel · groupes du jour · cibles</small></button>
+      <button class="pm-btn" data-action="profTab" data-tab="export"><span class="ico">📁</span>Export / Sauvegarde<small>Excel · QR tablettes · sauvegarde</small></button>
+    </div>`;
 }
 function profClasses(){
   const cls = Object.values(ROOT.classes);
-  return `<div class="card strong"><h2>Classe en cours</h2>
-      <div class="class-chips" style="justify-content:flex-start">${cls.map(c=>`<button class="class-chip ${c.id===S.id?'on':''}" data-action="selClass" data-id="${c.id}">🏫 ${esc(className(c))} <small style="font-weight:700">· ${c.students.length} él. · L${Math.min(c.settings.current||1, c.settings.nbLessons)}</small></button>`).join('')}</div></div>
-    <div class="card"><h2>Renommer « ${esc(className())} »</h2><div class="row">
-      <input type="text" data-field="className" value="${esc(S.settings.className)}" class="grow" style="max-width:420px"></div></div>
-    <div class="card"><h2>Nouvelle classe</h2><div class="row">
-      <input type="text" id="new-class" placeholder="2nde 4" style="max-width:420px"><button class="btn green" data-action="addClass">＋ Créer</button></div></div>
-    ${cls.length > 1 ? `<div class="card"><button class="btn small red" data-action="delClass">🗑 Supprimer « ${esc(className())} »</button></div>` : ''}`;
+  return `<div class="card compact"><div class="row">
+      <label class="field grow">Nom de la classe<input type="text" data-field="className" value="${esc(S.settings.className)}"></label>
+      <label class="field grow">Nouvelle classe<input type="text" id="new-class" placeholder="2nde 4"></label>
+      <button class="btn green" data-action="addClass" style="align-self:flex-end">＋ Ajouter</button>
+      ${cls.length > 1 ? `<button class="btn red" data-action="delClass" style="align-self:flex-end">🗑 Supprimer « ${esc(className())} »</button>` : ''}</div></div>`;
 }
-function afterProf(){ if (UI.profTab === 'groupes') bindGroups(); }
+/* Groupes du jour : signale les groupes incomplets (absents / inaptes) et permet de déplacer des élèves pour cette leçon */
+function profDayGroups(){
+  const n = curLesson(), G = nbGroups(), L = lesson(n);
+  if (G < 2) return `<div class="card">La classe fonctionne en 1 seul groupe. <button class="btn small" data-action="profTab" data-tab="groupes">🎽 Créer des groupes</button></div>`;
+  const moved = Object.keys(L.grpOv).length;
+  const zone = g => {
+    const all = sortedStudents().filter(s => grpOf(s.id, n) === g), c = g ? groupColor(g) : null;
+    const pres = all.filter(s => present(n, s.id)), off = all.length - pres.length;
+    const usual = S.students.filter(s => (s.grp||0) === g).length;
+    const warn = g && (off > 0 || pres.length !== usual);
+    return `<div class="gzone ${warn?'warn':''}" data-zone="${g}"><h3 data-action="dropSel" data-zone="${g}">${c?`<span class="dot" style="background:${c.c}"></span>`:''}${g ? groupName(g) : 'Sans groupe'}${warn?' <span class="tag mod">⚠ incomplet</span>':''}</h3>
+      <div class="zinfo">${pres.length} présent(s)${off?` · ${off} absent(s)/inapte(s)`:''}${g && pres.length !== usual ? ` · habituellement ${usual}` : ''}</div>
+      <div class="gitems">${all.map(s => { const a = attOf(n, s.id), mv = L.grpOv[s.id] != null;
+        return `<div class="gitem ${UI.sel===s.id?'sel':''} ${a?'off':''} ${mv?'moved':''}" data-gid="${s.id}" style="${c?`border-left:12px solid ${c.c}`:''}">${esc(nameOf(s.id))}${a==='abs'?' <span class="tag abs">Abs.</span>':a==='inap'?' <span class="tag inapte">Inapte</span>':''}${mv?' ↪':''}</div>`; }).join('')}</div></div>`;
+  };
+  return `<div class="card compact"><div class="row"><b class="grow">Groupes de la leçon ${n}${moved?` · ${moved} élève(s) déplacé(s) ↪`:''}</b>
+      ${moved?`<button class="btn small" data-action="resetDayGroups">Groupes habituels</button>`:''}</div></div>
+    <div class="groups day">${Array.from({length:G},(_,i)=>zone(i+1)).join('')}${S.students.some(s => grpOf(s.id, n) === 0) ? zone(0) : ''}</div>`;
+}
+function afterProf(){ if (UI.profTab === 'groupes' || UI.profTab === 'lgroupes') bindGroups(); }
 
 function stepper(action, attrs, val, disp){
   return `<div class="stepper"><button data-action="${action}" ${attrs} data-d="-1">−</button><span class="val">${disp ?? val}</span><button data-action="${action}" ${attrs} data-d="1">+</button></div>`;
@@ -642,7 +691,7 @@ function plotTable(){
     <table class="simple"><tr><th>🏀 Plot</th><th>Distance de la ligne de lancer</th></tr>
       ${b.map(k=>`<tr><td><b>${k}</b></td><td>${fmt(distB(k))} m</td></tr>`).join('')}</table></div>`;
 }
-function profLecons(){
+function profCycle(){
   const N = S.settings.nbLessons, cur = curLesson(), st = S.settings;
   let rows = '';
   for (let n = 1; n <= N; n++) {
@@ -653,7 +702,7 @@ function profLecons(){
       <div class="lrow-top"><input type="text" data-field="title" data-n="${n}" value="${esc(L.title)}" placeholder="Titre${isLast(n)?' · dernière leçon (projet élève)':''}">${sourceSelect(n)}</div>
       <div class="lrow-att">${attF('s')}${attF('b')}</div></div></div>`;
   }
-  return `<div class="card strong compact"><h2>Paramètres du cycle</h2>
+  return `<div class="card strong compact">
       <div class="cgrid">
         <div class="rf"><div class="rf-h"><span class="rf-l">📅 Nb leçons</span></div>${stepper('nbLessons','',N)}</div>
         ${rangeField(`🏃 Sprints / leçon`, st.baseCourses, 'data-field="set" data-k="baseCourses"', 1, 10)}
@@ -663,17 +712,15 @@ function profLecons(){
       <div class="cgrid">
         ${rangeField('1er plot', st.firstS, 'data-field="set" data-k="firstS"', 5, 30, ' km/h', 1)}
         ${rangeField('Temps', st.timeS, 'data-field="set" data-k="timeS"', 2, 15, ' s', 0.5)}
-        ${rangeField('Points max', st.plotsS, 'data-field="set" data-k="plotsS"', 1, 20)}
+        ${rangeField('Plots = pts max', st.plotsS, 'data-field="set" data-k="plotsS"', 1, 20)}
       </div>
       <h3>🏀 Lancer <span class="muted">· ${st.plotsB} plots · ${fmt(distB(1))} → ${fmt(distB(st.plotsB))} m</span></h3>
       <div class="cgrid">
         ${rangeField('1er plot', st.firstB, 'data-field="set" data-k="firstB"', 1, 15, ' m', 0.5)}
         ${rangeField('Écart', st.stepB, 'data-field="set" data-k="stepB"', 0.5, 5, ' m', 0.5)}
-        ${rangeField('Points max', st.plotsB, 'data-field="set" data-k="plotsB"', 1, 20)}
+        ${rangeField('Plots = pts max', st.plotsB, 'data-field="set" data-k="plotsB"', 1, 20)}
       </div>
       <details><summary style="font-weight:900;cursor:pointer">📏 Mise en place des plots</summary>${plotTable()}</details></div>
-    <div class="card strong compact"><h2>Leçon du jour</h2>
-      <div class="lesson-picker">${Array.from({length:N},(_,i)=>i+1).map(n=>`<button class="lp ${n===cur?'on':''}" data-action="setCurrent" data-n="${n}">${n}</button>`).join('')}</div></div>
     <div class="card compact"><h2>Leçons</h2>${rows}</div>`;
 }
 function sourceSelect(n, label=''){
@@ -745,6 +792,11 @@ function profGroupes(){
       ${G > 1 ? `<button class="btn small ghost" data-action="clearGroups" style="margin-top:10px">Tout retirer</button>` : ''}</div>
     ${G > 1 ? `<div class="groups">${zone(0, 'Sans groupe')}${Array.from({length:G},(_,i)=>zone(i+1, groupName(i+1))).join('')}</div>` : ''}`;
 }
+function moveToGroup(sid, g){
+  const s = student(sid); if (!s) return;
+  if (UI.profTab === 'lgroupes') { const L = lesson(curLesson()); if ((s.grp||0) === g) delete L.grpOv[sid]; else L.grpOv[sid] = g; }
+  else s.grp = g;
+}
 function bindGroups(){
   let drag = null;
   document.querySelectorAll('.gitem').forEach(el => {
@@ -770,7 +822,7 @@ function bindGroups(){
       document.querySelectorAll('.gzone').forEach(z => z.classList.remove('hover'));
       if (!d.moved) { UI.sel = UI.sel === d.id ? null : d.id; render(); return; }
       const z = document.elementFromPoint(e.clientX, e.clientY)?.closest('.gzone');
-      if (z) { const s = student(d.id); s.grp = +z.dataset.zone || 0; UI.sel = null; save(); }
+      if (z) { moveToGroup(d.id, +z.dataset.zone || 0); UI.sel = null; save(); }
       render();
     };
     el.addEventListener('pointerup', end); el.addEventListener('pointercancel', end);
@@ -1000,7 +1052,7 @@ async function applyPacket(p){
     if (p.groupColors) S.settings.groupColors = p.groupColors;
     const L = lesson(p.settings.current);
     L.title = p.title; L.nbCourses = p.nbC; L.nbTirs = p.nbT;
-    L.fixedS = {}; L.fixedB = {}; L.manual = {}; L.manualB = {}; L.adjust = {}; L.adjustB = {}; L.att = {};
+    L.fixedS = {}; L.fixedB = {}; L.manual = {}; L.manualB = {}; L.adjust = {}; L.adjustB = {}; L.att = {}; L.grpOv = {};
     list.forEach((s, i) => { const r = p.rows[i]; if (!r) return;
       if (r.tS != null) L.fixedS[s.id] = r.tS; if (r.tB != null) L.fixedB[s.id] = r.tB;
       if (r.aS) L.adjust[s.id] = r.aS; if (r.aB) L.adjustB[s.id] = r.aB; if (r.att) L.att[s.id] = r.att; s.grp = r.grp || 0; });
@@ -1053,7 +1105,7 @@ function binLesson(n){
     const aS = +(L.adjust[s.id]||0), aB = +(L.adjustB[s.id]||0), at = attOf(cur, s.id);
     w.u8(nv(baseTarget(cur, s.id, 's'))); w.u8(nv(baseTarget(cur, s.id, 'b')));
     w.u8((aS<0?1:aS>0?2:0) | ((aB<0?1:aB>0?2:0)<<2) | ((at==='abs'?1:at==='inap'?2:0)<<4));
-    w.u8(s.grp||0);
+    w.u8(grpOf(s.id, cur));
   });
   return w.bytes();
 }
@@ -1491,7 +1543,7 @@ async function importSyncFile(file){
 const A = {
   go: d => go(d.view),
   openProf: () => openProf(),
-  profTab: d => { UI.profTab = d.tab; UI.sel = null; render(); },
+  profTab: d => { UI.profTab = d.tab; UI.sel = null; render(); window.scrollTo(0,0); },
   filter: d => { UI.filter = d.g ? +d.g : null; render(); },
   goSaisie: () => { UI.filter = null; go('saisie'); },
   pickGroup: d => { UI.filter = d.g === 'all' ? 'all' : d.g ? +d.g : null; go('saisie'); },
@@ -1544,7 +1596,8 @@ const A = {
   resetTarget: d => { delete lesson(curLesson())[ACT[d.a].man][d.sid]; save(); render(); },
 
   // prof : groupes
-  dropSel: d => { if (!UI.sel) return; const s = student(UI.sel); if (s) { s.grp = +d.zone || 0; save(); } UI.sel = null; render(); },
+  dropSel: d => { if (!UI.sel) return; moveToGroup(UI.sel, +d.zone || 0); save(); UI.sel = null; render(); },
+  resetDayGroups: () => { lesson(curLesson()).grpOv = {}; save(); render(); },
   clearGroups: () => { S.students.forEach(s => s.grp = 0); save(); render(); },
   setGroups: d => { S.settings.nbGroups = +d.n; S.students.forEach(s => { if (s.grp > +d.n) s.grp = 0; }); UI.filter = null; save(); render(); },
   groupColor: d => { S.settings.groupColors[+d.g - 1] = d.c; save(); render(); },
