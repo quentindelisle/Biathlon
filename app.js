@@ -10,7 +10,7 @@
    ===================================================================== */
 'use strict';
 
-const APP_VERSION = '7.0.1';
+const APP_VERSION = '7.1.0';
 const STORE_KEY = 'neps_biathlon5s_v2';
 const QR_CHUNK = 440;           // caractères base45 par QR (QR version 11 max : facile à lire par une caméra)
 
@@ -541,15 +541,15 @@ function bindEntry(){
    Mode avancé (code 4321) : forme, douleurs, motivation · projet de l'élève
    ===================================================================== */
 const ZONES = [
-  {k:'tete', n:'Tête', x:100, y:28}, {k:'cou', n:'Cou', x:100, y:60},
-  {k:'epD', n:'Épaule droite', x:66, y:82}, {k:'epG', n:'Épaule gauche', x:134, y:82},
-  {k:'brD', n:'Bras / coude droit', x:50, y:132}, {k:'brG', n:'Bras / coude gauche', x:150, y:132},
-  {k:'maD', n:'Poignet / main droite', x:38, y:186}, {k:'maG', n:'Poignet / main gauche', x:162, y:186},
-  {k:'ven', n:'Ventre', x:100, y:140}, {k:'han', n:'Hanches / aine', x:100, y:192},
-  {k:'cuD', n:'Cuisse droite', x:82, y:238}, {k:'cuG', n:'Cuisse gauche', x:118, y:238},
-  {k:'geD', n:'Genou droit', x:82, y:282}, {k:'geG', n:'Genou gauche', x:118, y:282},
-  {k:'moD', n:'Mollet / tibia droit', x:82, y:322}, {k:'moG', n:'Mollet / tibia gauche', x:118, y:322},
-  {k:'piD', n:'Cheville / pied droit', x:80, y:372}, {k:'piG', n:'Cheville / pied gauche', x:120, y:372},
+  {k:'tete', n:'Tête', x:100, y:12}, {k:'cou', n:'Cou', x:100, y:58},
+  {k:'epD', n:'Épaule droite', x:64, y:78}, {k:'epG', n:'Épaule gauche', x:136, y:78},
+  {k:'brD', n:'Bras / coude droit', x:43, y:136}, {k:'brG', n:'Bras / coude gauche', x:157, y:136},
+  {k:'maD', n:'Poignet / main droite', x:36, y:194}, {k:'maG', n:'Poignet / main gauche', x:164, y:194},
+  {k:'ven', n:'Ventre', x:100, y:168}, {k:'han', n:'Hanches / aine', x:100, y:206},
+  {k:'cuD', n:'Cuisse droite', x:84, y:258}, {k:'cuG', n:'Cuisse gauche', x:116, y:258},
+  {k:'geD', n:'Genou droit', x:85, y:296}, {k:'geG', n:'Genou gauche', x:115, y:296},
+  {k:'moD', n:'Mollet / tibia droit', x:85, y:330}, {k:'moG', n:'Mollet / tibia gauche', x:115, y:330},
+  {k:'piD', n:'Cheville / pied droit', x:80, y:370}, {k:'piG', n:'Cheville / pied gauche', x:120, y:370},
   {k:'dos', n:'Dos'}, {k:'lom', n:'Bas du dos'}
 ];
 const zoneMask = list => (list||[]).reduce((m, k) => { const i = ZONES.findIndex(z => z.k === k); return i < 0 ? m : (m | (1 << i)) >>> 0; }, 0);
@@ -557,9 +557,15 @@ const maskZones = m => ZONES.filter((z, i) => (m >>> i) & 1).map(z => z.k);
 const zoneName = k => ZONES.find(z => z.k === k)?.n || k;
 const isAdv = () => !!ROOT.advanced;
 function scaleColor(v){ return ['#D0161B','#E3401B','#F07000','#F59E0B','#FFD000','#C8D93A','#86DC96','#3FB65C','#1E8E3E','#0B4F1C'][Math.max(1,Math.min(10,v))-1]; }
-function scale10(label, ico, val, attrs){
-  return `<div class="sc10"><div class="sc10-l">${ico} ${label}</div><div class="sc10-r">${Array.from({length:10},(_,i)=>i+1).map(v =>
-    `<button class="${val===v?'on':''}" style="${val===v?`background:${scaleColor(v)};border-color:${scaleColor(v)};color:${v>=5&&v<=7?'#0A1633':'#fff'}`:''}" ${attrs} data-v="${v}">${v}</button>`).join('')}</div></div>`;
+/* Échelles 1 → 10 (du moins bien au mieux). État : inspiré de l'échelle de Borg (ressenti de fatigue / forme). */
+const SCALES = {
+  forme: [['😵','Épuisé'],['😫','Très fatigué'],['😩','Fatigué'],['😕','Un peu fatigué'],['😐','Moyen'],['🙂','Correct'],['😊','Bien'],['😄','Très bien'],['💪','En pleine forme'],['🤩','Au top']],
+  motiv: [['😴','Aucune envie'],['🥱','Très peu'],['😒','Peu'],['😕','Bof'],['😐','Moyenne'],['🙂','Assez'],['😊','Motivé'],['😃','Très motivé'],['🔥','À fond'],['🚀','Ultra motivé']],
+};
+function scale10(label, ico, val, attrs, kind='forme'){
+  const sc = SCALES[kind];
+  return `<div class="sc10"><div class="sc10-l">${ico} ${label}${val?` <span class="sc10-sel">${sc[val-1][0]} ${sc[val-1][1]}</span>`:''}</div><div class="sc10-r">${Array.from({length:10},(_,i)=>i+1).map(v =>
+    `<button class="${val===v?'on':''}" style="${val===v?`background:${scaleColor(v)};border-color:${scaleColor(v)};color:${v>=5&&v<=7?'#0A1633':'#fff'}`:''}" ${attrs} data-v="${v}" title="${sc[v-1][1]}"><span class="sc10-i">${sc[v-1][0]}</span><span class="sc10-n">${v}</span></button>`).join('')}</div></div>`;
 }
 function wellBlock(n, sid, when){
   const r = res(n, sid) || {};
@@ -571,18 +577,44 @@ function wellBlock(n, sid, when){
   }
   return `<section class="well-sec"><h2>🌇 Fin de leçon</h2>
     ${scale10('Mon état en fin de leçon', '😮‍💨', r.fa, `data-action="well" data-f="fa"`)}
-    ${scale10('Ma motivation', '🔥', r.mo, `data-action="well" data-f="mo"`)}</section>`;
+    ${scale10('Ma motivation', '🔥', r.mo, `data-action="well" data-f="mo"`, 'motiv')}</section>`;
 }
 function bodySVG(sel){
   const on = k => sel.includes(k);
   let z = '';
-  ZONES.filter(q => q.x).forEach(q => { z += `<g data-zone="${q.k}" class="bz ${on(q.k)?'on':''}"><circle cx="${q.x}" cy="${q.y}" r="${q.k==='tete'?20:14}"/></g>`; });
+  ZONES.filter(q => q.x).forEach(q => { z += `<g data-zone="${q.k}" class="bz ${on(q.k)?'on':''}"><circle cx="${q.x}" cy="${q.y}" r="${q.k==='tete'?14:13}"/>${on(q.k)?`<text x="${q.x}" y="${q.y+5}" text-anchor="middle" class="ouch">!</text>`:''}</g>`; });
+  const skin = '#FFD3A8', line = '#5A3A22';
   return `<svg viewBox="0 0 200 400" class="body-svg">
-    <g class="sil"><circle cx="100" cy="28" r="22"/><rect x="92" y="48" width="16" height="16"/>
-      <path d="M62 70 Q100 62 138 70 L132 200 Q100 210 68 200 Z"/>
-      <path d="M62 72 L40 140 L32 190 L44 192 L54 145 L72 100 Z"/><path d="M138 72 L160 140 L168 190 L156 192 L146 145 L128 100 Z"/>
-      <path d="M70 196 L66 300 L72 380 L90 380 L94 300 L98 205 Z"/><path d="M130 196 L134 300 L128 380 L110 380 L106 300 L102 205 Z"/></g>
-    <text x="22" y="20" class="lr">D</text><text x="172" y="20" class="lr">G</text>${z}</svg>`;
+    <g stroke="${line}" stroke-width="2.5" stroke-linejoin="round" stroke-linecap="round">
+      <!-- jambes -->
+      <path d="M78 205 L74 300 L76 362 L94 362 L96 300 L99 210 Z" fill="${skin}"/>
+      <path d="M122 205 L126 300 L124 362 L106 362 L104 300 L101 210 Z" fill="${skin}"/>
+      <!-- baskets -->
+      <path d="M70 360 Q70 352 80 352 L96 352 L98 372 Q99 384 86 384 L64 384 Q56 384 58 376 Q60 368 70 368 Z" fill="#F07000"/>
+      <path d="M130 360 Q130 352 120 352 L104 352 L102 372 Q101 384 114 384 L136 384 Q144 384 142 376 Q140 368 130 368 Z" fill="#F07000"/>
+      <!-- short -->
+      <path d="M66 185 L134 185 L138 240 L104 240 L100 212 L96 240 L62 240 Z" fill="#0B2A6B"/>
+      <!-- bras -->
+      <path d="M64 76 Q46 100 42 140 Q38 168 36 190" fill="none" stroke-width="16" stroke="${line}"/>
+      <path d="M64 76 Q46 100 42 140 Q38 168 36 190" fill="none" stroke-width="11" stroke="${skin}"/>
+      <path d="M136 76 Q154 100 158 140 Q162 168 164 190" fill="none" stroke-width="16" stroke="${line}"/>
+      <path d="M136 76 Q154 100 158 140 Q162 168 164 190" fill="none" stroke-width="11" stroke="${skin}"/>
+      <circle cx="36" cy="192" r="9" fill="${skin}"/><circle cx="164" cy="192" r="9" fill="${skin}"/>
+      <!-- maillot -->
+      <path d="M64 72 Q100 60 136 72 L142 104 L130 108 L134 190 L66 190 L70 108 L58 104 Z" fill="#0A5BD3"/>
+      <path d="M86 66 Q100 80 114 66" fill="none"/>
+      <text x="100" y="146" text-anchor="middle" font-size="26" font-weight="900" fill="#FFD000" stroke="none">5</text>
+      <!-- cou + tête -->
+      <rect x="92" y="50" width="16" height="16" fill="${skin}"/>
+      <circle cx="100" cy="30" r="26" fill="${skin}"/>
+      <path d="M76 22 Q80 2 100 4 Q122 2 126 22 Q114 12 100 16 Q88 10 76 22 Z" fill="#7A4A22"/>
+      <circle cx="73" cy="32" r="5" fill="${skin}"/><circle cx="127" cy="32" r="5" fill="${skin}"/>
+    </g>
+    <circle cx="90" cy="28" r="3.6" fill="#1A1A1A"/><circle cx="110" cy="28" r="3.6" fill="#1A1A1A"/>
+    <circle cx="91.3" cy="26.7" r="1.2" fill="#fff"/><circle cx="111.3" cy="26.7" r="1.2" fill="#fff"/>
+    <circle cx="84" cy="38" r="4" fill="#FF8C9A" opacity=".55"/><circle cx="116" cy="38" r="4" fill="#FF8C9A" opacity=".55"/>
+    <path d="M88 38 Q100 50 112 38 Q100 44 88 38 Z" fill="#B3263A" stroke="#5A3A22" stroke-width="2"/>
+    <text x="16" y="70" class="lr">D</text><text x="176" y="70" class="lr">G</text>${z}</svg>`;
 }
 function painModal(){
   const n = curLesson(), sid = UI.sid;
@@ -600,6 +632,42 @@ function painModal(){
   const done = list => { setRes(n, sid, r => { r.dl = list; }); closeModal(); render(); flagSaved(); };
   m.querySelector('[data-p="none"]').onclick = () => done([]);
   m.querySelector('[data-p="ok"]').onclick = () => done(sel);
+}
+
+
+/* ---------- Classe « Test » (mode 4321) : données inventées pour essayer l'appli ---------- */
+function makeTestClass(){
+  const R = (a, b) => a + Math.floor(Math.random() * (b - a + 1));
+  const pick = arr => arr[Math.floor(Math.random() * arr.length)];
+  const PRENOMS = ['Léa','Hugo','Chloé','Lucas','Inès','Tom','Jade','Nathan','Emma','Louis','Manon','Adam','Zoé','Gabriel','Lina','Raphaël','Camille','Arthur','Rose','Sacha','Mila','Noah','Lou','Maël','Anna','Timéo','Alice','Ethan','Léna','Yanis'];
+  const NOMS = ['MARTIN','BERNARD','DUBOIS','THOMAS','ROBERT','RICHARD','PETIT','DURAND','LEROY','MOREAU','SIMON','LAURENT','LEFEBVRE','MICHEL','GARCIA','DAVID','BERTRAND','ROUX','VINCENT','FOURNIER','MOREL','GIRARD','ANDRE','MERCIER','DUPONT','LAMBERT','BONNET','FRANCOIS','MARTINEZ','LEGRAND'];
+  const old = Object.values(ROOT.classes).find(c => c.settings.className === 'Classe Test');
+  const c = newClassState('Classe Test', old ? old.id : undefined);
+  ROOT.classes[c.id] = c; useClass(c.id);
+  const st = S.settings;
+  Object.assign(st, { nbLessons:9, baseCourses:6, baseTirs:6, timeS:6, plotsS:8, plotsB:8, firstS:15, firstB:4, stepB:2, nbGroups:4, current:9 });
+  const prenoms = [...PRENOMS].sort(() => Math.random() - .5).slice(0, 24);
+  prenoms.forEach((p, i) => S.students.push({ id:newStudentId(), nom: NOMS[i], prenom:p, grp: 0 }));
+  [...S.students].sort(() => Math.random() - .5).forEach((s, i) => s.grp = (i % 4) + 1);
+  const kinds = { 1:'diag', 4:'inter', 9:'finale' };
+  for (let n = 1; n <= 9; n++) { const L = lesson(n); L.kind = kinds[n]; L.title = kinds[n] ? '' : ['','','Courir à sa cible','Enchaîner course et tir','','Gérer son effort','Régularité','Préparer l\'évaluation'][n-1] || '';
+    L.source = n === 1 || n === 4 ? 'none' : n === 9 ? 'projet' : n < 4 ? 'diag' : 'inter'; }
+  const zones = ZONES.map(z => z.k);
+  S.students.forEach(s => {
+    const lvS = 2 + Math.random() * 3.5, lvB = 2 + Math.random() * 3.5, prog = .15 + Math.random() * .35, moral = R(4, 8);
+    for (let n = 1; n <= 8; n++) {
+      const L = lesson(n), x = Math.random();
+      if (x < .05) { L.att[s.id] = 'abs'; continue; }
+      if (x < .08) { L.att[s.id] = 'inap'; continue; }
+      const lv = (base) => Math.max(0, Math.min(8, Math.round(base + prog * (n - 1) + (Math.random() * 2.4 - 1.2))));
+      const fb = Math.max(1, Math.min(10, moral + R(-2, 2)));
+      S.results[n] = S.results[n] || {};
+      S.results[n][s.id] = { c: Array.from({length:6}, () => lv(lvS)), b: Array.from({length:6}, () => lv(lvB)),
+        fb, fa: Math.max(1, Math.min(10, fb + R(-3, 1))), mo: Math.max(1, Math.min(10, moral + R(-1, 2))),
+        dl: Math.random() < .12 ? [pick(zones)] : [], ts: now() - (9 - n) * 7 * 864e5, d: 'test' };
+    }
+  });
+  save();
 }
 
 /* ---------- Projet de l'élève (évaluation finale) ---------- */
@@ -663,7 +731,7 @@ function viewProjetDetail(){
         ${pains.length?` · 🩹 Douleurs signalées : ${pains.map(([k,c])=>`${esc(zoneName(k))} (${c})`).join(', ')}`:''}</div></div>
     <div class="card strong compact"><h2>🏁 Aujourd'hui : évaluation finale</h2>
       ${scale10('Mon état de forme aujourd\'hui', '💪', D.formeJ, `data-action="pjWell" data-f="formeJ"`)}
-      ${scale10('Ma motivation pour cette leçon', '🔥', D.motivJ, `data-action="pjWell" data-f="motivJ"`)}</div>
+      ${scale10('Ma motivation pour cette leçon', '🔥', D.motivJ, `data-action="pjWell" data-f="motivJ"`, 'motiv')}</div>
     <div class="card strong compact"><div class="pj-choices">${choose('s')}${choose('b')}</div>
       <label class="field" style="margin-top:10px">Mon projet<textarea id="pj-text" style="min-height:70px">${esc(P.texte||'')}</textarea></label>
       <div class="btn-row" style="margin-top:10px"><button class="btn green" data-action="pjSave">💾 Valider mon projet</button>
@@ -758,7 +826,9 @@ function openProf(){
     if (k === '⌫') code = code.slice(0,-1); else if (code.length < 4) code += k;
     dots.forEach((d,i)=>d.classList.toggle('f', i < code.length));
     if (code.length === 4) {
-      if (code === String(ROOT.pin || '0000') || code === ADV_PIN) { ROOT.advanced = code === ADV_PIN; save(); UI.profUnlocked = true; UI.profTab = 'menu'; closeModal(); go('prof'); }
+      if (code === String(ROOT.pin || '0000') || code === ADV_PIN) { ROOT.advanced = code === ADV_PIN;
+        if (ROOT.advanced && !Object.values(ROOT.classes).some(c => c.settings.className === 'Classe Test')) { const keep = S.id; makeTestClass(); useClass(keep); toast('🧪 Classe Test créée', 3000); }
+        save(); UI.profUnlocked = true; UI.profTab = 'menu'; closeModal(); go('prof'); }
       else { toast('Code incorrect'); code=''; dots.forEach(d=>d.classList.remove('f')); }
     }
   });
@@ -805,7 +875,8 @@ function profMenu(){
       <button class="pm-btn" data-action="profTab" data-tab="cycle"><span class="ico">⚙️</span>Paramètres du cycle<small>Leçons · sprints · lancers · plots</small></button>
       <button class="pm-btn" data-action="profTab" data-tab="appel"><span class="ico">📅</span>Leçon<small>Appel · groupes du jour · cibles</small></button>
       <button class="pm-btn" data-action="profTab" data-tab="export"><span class="ico">📁</span>Export / Sauvegarde<small>Excel · QR tablettes · sauvegarde</small></button>
-      ${isAdv() ? `<button class="pm-btn adv" data-action="go" data-view="projet"><span class="ico">🎯</span>Projet de l'élève<small>Bilan · forme · cibles de l'évaluation finale</small></button>` : ''}
+      ${isAdv() ? `<button class="pm-btn adv" data-action="go" data-view="projet"><span class="ico">🎯</span>Projet de l'élève<small>Bilan · forme · cibles de l'évaluation finale</small></button>
+        <button class="pm-btn adv" data-action="testClass"><span class="ico">🧪</span>Classe Test<small>Ouvrir · régénérer des données inventées</small></button>` : ''}
     </div>`;
 }
 function profClasses(){
@@ -1722,6 +1793,10 @@ const A = {
   goSaisie: () => { UI.filter = null; go('saisie'); },
   well: d => { const n = curLesson(), sid = UI.sid, v = +d.v; setRes(n, sid, r => { r[d.f] = r[d.f] === v ? null : v; }); render(); flagSaved(); },
   painOpen: () => painModal(),
+  testClass: async () => { const ex = Object.values(ROOT.classes).find(c => c.settings.className === 'Classe Test');
+    const ch = await choiceBox('🧪 Classe Test', '24 élèves inventés · 4 groupes · 9 leçons (L1 diagnostic, L4 intermédiaire, L9 finale) · 6 sprints de 6 s et 6 lancers, 8 points max.',
+      ex ? [{label:'Ouvrir', value:'open', cls:'primary'}, {label:'Régénérer', value:'new', cls:'orange'}] : [{label:'Créer', value:'new', cls:'primary'}]);
+    if (!ch) return; if (ch === 'new') makeTestClass(); else useClass(ex.id); save(); toast('🧪 Classe Test'); render(); },
   projetDetail: d => { UI.draft = null; go('projetDetail', { sid: d.sid }); },
   pjWell: d => { UI.draft[d.f] = UI.draft[d.f] === +d.v ? null : +d.v; render(); },
   pjSet: d => { UI.draft[d.a === 's' ? 'cibleS' : 'cibleB'] = +d.v; render(); },
