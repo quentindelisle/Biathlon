@@ -10,7 +10,7 @@
    ===================================================================== */
 'use strict';
 
-const APP_VERSION = '7.3.0';
+const APP_VERSION = '8.0.0';
 const STORE_KEY = 'neps_biathlon5s_v2';
 const QR_CHUNK = 440;           // caractères base45 par QR (QR version 11 max : facile à lire par une caméra)
 
@@ -52,7 +52,6 @@ function rnd(n){ const a='abcdefghijkmnpqrstuvwxyz23456789'; let s=''; for(let i
 const DEFAULT_SETTINGS = { nbLessons:8, current:1, className:'',
   baseCourses:3, baseTirs:3, plotsS:11, plotsB:8, ecartS:2, ecartB:1,
   firstS:15, timeS:5, firstB:4, stepB:2, nbGroups:1, groupColors:['rouge','bleu','jaune','vert','orange','violet','rose','cyan','noir','marron','lime','bordeaux','turquoise','gris','blanc','saumon','marine','kaki'] };
-const ADV_PIN = '4321';                 // code « mode avancé » (bilan forme / douleurs / motivation, projet de l'élève)
 const ROOT_KEY = 'neps_biathlon5s_v3';
 /* Plusieurs classes (cycles) sur le même appareil : ROOT = { deviceId, pin, active, classes:{ id: classe } } ;
    S désigne toujours la classe active. */
@@ -218,9 +217,10 @@ const avg = a => a.length ? a.reduce((x,y)=>x+y,0)/a.length : null;
 const clampT = (a, v) => v == null ? null : Math.max(1, Math.min(maxPlots(a), Math.round(v)));
 const hasSource = n => typeof lesson(n).source === 'number' && lesson(n).source < n;
 /* Nature de la leçon */
-const KINDS = { manuel:'Remplissage manuel', diag:'Évaluation diagnostique', inter:'Diagnostic intermédiaire', finale:'Évaluation finale' };
+const KINDS = { manuel:'Remplissage manuel', diag:'Évaluation diagnostique', inter:'Diagnostic intermédiaire', finale:'Évaluation finale', theme:'Thème de leçon' };
+const KIND_IDX = ['manuel','diag','inter','finale','theme'];
 const kindOf = n => lesson(n).kind || 'manuel';
-const lessonTitle = n => kindOf(n) === 'manuel' ? (lesson(n).title || '') : KINDS[kindOf(n)];
+const lessonTitle = n => kindOf(n) === 'manuel' ? (lesson(n).title || '') : kindOf(n) === 'theme' ? (lesson(n).th ? 'Thème : ' + lesson(n).th.n : 'Thème à choisir') : KINDS[kindOf(n)];
 /* Dernière leçon (avant n) d'une nature donnée */
 function lastKind(kind, n){ for (let k = n - 1; k >= 1; k--) if (kindOf(k) === kind) return k; return null; }
 const isFinale = n => kindOf(n) === 'finale';
@@ -465,7 +465,8 @@ function viewEntry(){
   let h = `<div class="entry-name">${band(sid)}<div class="who">${esc(nameOf(sid))}</div>
     <span class="saved" id="saved-flag"></span>
     <button class="btn" data-action="go" data-view="saisie" style="margin-left:auto">← Retour aux élèves</button></div>`;
-  if (isAdv()) h += wellBlock(n, sid, 'avant');
+  const adv = themeAdvice(n, sid);
+  if (adv) h += `<div class="advice ${adv.cls} theme-adv">${adv.t}</div>`;
   ['s','b'].forEach(a => {
     const A_ = ACT[a], nb = nbAtt(n, a), p = perf(n, sid, a), t = targetInfo(n, sid, a).value, mx = maxPlots(a);
     if (!nb) return;
@@ -480,8 +481,9 @@ function viewEntry(){
         <button class="btn small ghost" data-action="dialClear" data-a="${a}" data-k="${k}">Effacer</button></div>`;
     }
     h += `</div></div></section>`;
+    if (lessonTheme(n)?.a === a) h += obsBlock(n, sid);
   });
-  if (isAdv()) h += wellBlock(n, sid, 'apres');
+  h += wellBlock(n, sid, 'apres');
   h += `<div class="nav-bottom">
       <button class="btn" data-action="entry" data-sid="${prev?.id||''}" ${prev?'':'disabled'}>← ${prev?esc(nameOf(prev.id)):'Précédent'}</button>
       <button class="btn primary" data-action="go" data-view="saisie">▦ Retour aux élèves</button>
@@ -538,7 +540,117 @@ function bindEntry(){
 }
 
 /* =====================================================================
-   Mode avancé (code 4321) : forme, douleurs, motivation · projet de l'élève
+   Thèmes de leçon : critères observables (motricité), observés une fois par leçon
+   ===================================================================== */
+const OBS = [null,
+  { n:'Jamais', c:'#D0161B', f:'#fff' },
+  { n:'Parfois', c:'#F07000', f:'#fff' },
+  { n:'Souvent', c:'#86DC96', f:'#0A1633' },
+  { n:'Toujours', c:'#0B4F1C', f:'#fff' }];
+const DEFAULT_THEMES = [
+  { id:'pdep', n:'Posture de départ', a:'s', cr:['Semi-vissé', 'Penché en avant', 'Rythme accéléré'] },
+  { id:'papp', n:'Premiers appuis', a:'s', cr:['Regard vers le bas', 'Penché en avant', 'Utilise ses bras'] },
+  { id:'mvit', n:'Maintien de la vitesse', a:'s', cr:['Se redresse', 'Regard en face', 'Court grand'] },
+  { id:'bras', n:'Action des bras', a:'s', cr:['Bras fléchis à 90°', "Bras d'avant en arrière (pas en croix)", 'Épaules relâchées'] },
+  { id:'fini', n:'Finir sa course', a:'s', cr:['Ne ralentit pas avant le signal', 'Garde la même foulée', 'Reste gainé'] },
+  { id:'arme', n:'Armé et poussée', a:'b', cr:['Ballon au-dessus du front', 'Coude sous le ballon', "Pousse vers le haut et l'avant"] },
+  { id:'traj', n:'Appuis et trajectoire', a:'b', cr:['Pieds écartés, stables', 'Fléchit puis pousse sur les jambes', 'Trajectoire en cloche'] },
+];
+const MAX_CR = 5;
+function themes(){ if (!ROOT.themes) ROOT.themes = DEFAULT_THEMES.map(t => ({ ...t, cr:[...t.cr] })); return ROOT.themes; }
+const themeById = id => themes().find(t => t.id === id);
+const snapTheme = t => t ? { id:t.id, n:t.n, a:t.a, cr:t.cr.filter(Boolean) } : null;
+const lessonTheme = n => kindOf(n) === 'theme' ? (lesson(n).th || null) : null;
+/* après modification d'un thème : mise à jour des leçons qui l'utilisent (toutes les classes) */
+function refreshThemeSnapshots(id){
+  const t = themeById(id);
+  Object.values(ROOT.classes).forEach(c => Object.values(c.lessons || {}).forEach(L => { if (L.kind === 'theme' && L.th && L.th.id === id) L.th = t ? snapTheme(t) : null; }));
+}
+/* Forme avant / douleurs : notées par le prof pendant l'appel (anciennes données : saisies par l'élève) */
+const fbOf = (n, sid) => (lesson(n).wb?.[sid]?.fb) ?? res(n, sid)?.fb ?? null;
+const dlOf = (n, sid) => (lesson(n).wb?.[sid]?.dl) ?? res(n, sid)?.dl ?? [];
+const obsOf = (n, sid) => { const th = lessonTheme(n), r = res(n, sid); return th && r && r.ob && r.ob.some(v => v) ? r.ob : null; };
+/* Conseil : dernière leçon (avant n) sur le même thème, critère le moins réussi */
+function lastObs(n, sid){
+  const th = lessonTheme(n); if (!th) return null;
+  for (let k = n - 1; k >= 1; k--) { const t2 = lessonTheme(k); if (t2 && t2.id === th.id) { const ob = obsOf(k, sid); if (ob) return { k, ob, cr: t2.cr }; } }
+  return null;
+}
+function pickAdvice(lo){
+  if (!lo) return null;
+  let i = 0; lo.ob.forEach((x, j) => { if (x && (!lo.ob[i] || x < lo.ob[i])) i = j; });
+  return lo.ob[i] ? { k: lo.k, i, v: lo.ob[i] } : null;
+}
+function themeAdvice(n, sid){
+  const th = lessonTheme(n); if (!th) return null;
+  const sent = lesson(n).adv?.[sid];                        // conseil calculé par le prof (reçu par QR)
+  let k, i, v;
+  if (sent) ({ k, i, v } = sent);
+  else { const p = pickAdvice(lastObs(n, sid)); if (!p) return null; ({ k, i, v } = p); }
+  const cr = th.cr[i]; if (!cr || !v) return null;
+  return v <= 2
+    ? { cls:'warn', t:`💡 Rappelle-toi : la dernière fois (L${k}), « ${esc(cr)} » n'était pas assez souvent réussi (<b>${OBS[v].n.toLowerCase()}</b>). Concentre-toi dessus !` }
+    : { cls:'good', t:`👍 La dernière fois (L${k}), tes critères étaient réussis souvent ou toujours. Vise « toujours » pour « ${esc(cr)} » !` };
+}
+const obsChip = v => v ? `<span class="obs-chip" style="background:${OBS[v].c};color:${OBS[v].f}">${OBS[v].n}</span>` : '<span class="muted">—</span>';
+/* Bilan : critères observés, regroupés par thème */
+function obsBilan(sid){
+  const byTh = {};
+  for (let n = 1; n <= S.settings.nbLessons; n++) { const th = lessonTheme(n); if (!th) continue;
+    (byTh[th.id] = byTh[th.id] || { th, ls: [] }).ls.push({ n, ob: obsOf(n, sid), at: attOf(n, sid) }); }
+  const list = Object.values(byTh); if (!list.length) return '';
+  return list.map(({ th, ls }) => `<div class="obs-bilan"><h3>${ACT[th.a].ico} ${esc(th.n)}</h3>
+    <div class="pj-table-wrap"><table class="pj-table"><tr><th>Critère</th>${ls.map(x => `<th>L${x.n}</th>`).join('')}</tr>
+    ${th.cr.map((c, i) => `<tr><td><b>${esc(c)}</b></td>${ls.map(x => `<td class="c">${x.at ? `<span class="tag ${x.at==='abs'?'abs':'inapte'}">${x.at==='abs'?'Abs.':'Inapte'}</span>` : obsChip(x.ob?.[i])}</td>`).join('')}</tr>`).join('')}</table></div></div>`).join('');
+}
+/* Bloc de la fiche de saisie : à observer pendant les courses, puis Toujours / Souvent / Parfois / Jamais */
+function obsBlock(n, sid){
+  const th = lessonTheme(n); if (!th || !th.cr.length) return '';
+  const a = th.a, nb = nbAtt(n, a), done = vals(perf(n, sid, a)).length >= nb, ob = res(n, sid)?.ob || [];
+  if (!done) return `<section class="obs-sec"><h2>👀 ${esc(th.n)} · à observer pendant les ${ACT[a].word}s</h2>
+    <div class="obs-todo">${th.cr.map(c => `<span>${esc(c)}</span>`).join('')}</div>
+    <div class="muted" style="font-weight:700">Les critères se remplissent après ${a==='s'?'la dernière course':'le dernier tir'}.</div></section>`;
+  return `<section class="obs-sec on"><h2>👀 ${esc(th.n)} · ce que l'observateur a vu</h2>
+    ${th.cr.map((c, i) => `<div class="obs-row"><div class="obs-c">${esc(c)}</div><div class="obs-btns">${[4,3,2,1].map(v =>
+      `<button class="obtn ${ob[i]===v?'on':''}" style="--cc:${OBS[v].c};--cf:${OBS[v].f}" data-action="obs" data-i="${i}" data-v="${v}">${OBS[v].n}</button>`).join('')}</div></div>`).join('')}</section>`;
+}
+/* Forme + douleurs pendant l'appel (prof) */
+function appelWellModal(sid){
+  const n = curLesson(), L = lesson(n); L.wb = L.wb || {};
+  const cur = L.wb[sid] || {};
+  let fb = cur.fb ?? null, sel = [...(cur.dl || [])];
+  const m = modal(`<h2>💪 ${esc(nameOf(sid))} · début de leçon</h2><div id="wm-sc"></div>
+    <h3 style="margin-top:10px">🩹 Douleurs</h3><div class="pain-wrap"><div id="body-box"></div>
+      <div class="pain-side"><div class="btn-row" id="extra-z"></div><p id="pain-list" style="font-weight:800"></p></div></div>
+    <div class="btn-row spread" style="margin-top:10px"><button class="btn" data-p="cancel">Annuler</button><button class="btn primary" data-p="ok">Valider</button></div>`, { wide:true });
+  const draw = () => {
+    m.querySelector('#wm-sc').innerHTML = scale10('État de forme', '💪', fb, 'data-wv="1"');
+    m.querySelectorAll('[data-wv]').forEach(b => b.onclick = e => { e.stopPropagation(); fb = fb === +b.dataset.v ? null : +b.dataset.v; draw(); });
+    m.querySelector('#body-box').innerHTML = bodySVG(sel);
+    m.querySelector('#extra-z').innerHTML = ZONES.filter(q => !q.x).map(q => `<button class="btn ${sel.includes(q.k)?'red':''}" data-z="${q.k}">${q.n}</button>`).join('');
+    m.querySelector('#pain-list').textContent = sel.length ? sel.map(zoneName).join(' · ') : 'Aucune douleur';
+    m.querySelectorAll('[data-zone],[data-z]').forEach(el => el.onclick = () => { const k = el.dataset.zone || el.dataset.z; sel = sel.includes(k) ? sel.filter(x => x !== k) : [...sel, k]; draw(); });
+  };
+  draw();
+  m.querySelector('[data-p="cancel"]').onclick = () => closeModal();
+  m.querySelector('[data-p="ok"]').onclick = () => { if (fb == null && !sel.length) delete L.wb[sid]; else L.wb[sid] = { fb, dl: sel }; save(); closeModal(); render(); };
+}
+/* Banque de thèmes (Paramètres du cycle) */
+function profThemes(){
+  const T = themes();
+  const used = id => Object.values(S.lessons).some(L => L.kind === 'theme' && L.th && L.th.id === id);
+  return `<div class="card compact"><div class="row"><h2 class="grow" style="margin:0">📚 Thèmes de leçon <span class="muted">· ${T.length}</span></h2>
+      <button class="btn small" data-action="thToggle">${UI.thOpen ? 'Masquer' : 'Afficher / modifier'}</button></div>
+    ${UI.thOpen ? `<div class="th-list">${T.map(t => `<div class="th-item">
+        <div class="row"><input type="text" class="grow th-name" data-field="thName" data-id="${t.id}" value="${esc(t.n)}" placeholder="Nom du thème">
+          <select data-field="thAct" data-id="${t.id}"><option value="s" ${t.a==='s'?'selected':''}>🏃 Course</option><option value="b" ${t.a==='b'?'selected':''}>🏀 Lancer</option></select>
+          <button class="btn small red" data-action="thDel" data-id="${t.id}">🗑</button></div>
+        <div class="th-cr">${Array.from({length:MAX_CR}, (_, i) => `<input type="text" data-field="thCr" data-id="${t.id}" data-i="${i}" value="${esc(t.cr[i]||'')}" placeholder="Critère ${i+1}${i>=2?' (facultatif)':''}">`).join('')}</div>
+        ${used(t.id) ? '<div class="muted" style="font-size:13px;font-weight:700">Utilisé dans ce cycle</div>' : ''}</div>`).join('')}</div>
+      <button class="btn green" data-action="thAdd" style="margin-top:10px">＋ Nouveau thème</button>` : `<div class="muted" style="font-weight:700;margin-top:6px">${T.map(t => `${ACT[t.a].ico} ${esc(t.n)}`).join(' · ')}</div>`}</div>`;
+}
+/* =====================================================================
+   Forme, douleurs · projet de l'élève 
    ===================================================================== */
 const ZONES = [
   {k:'tete', n:'Tête', x:100, y:12}, {k:'cou', n:'Cou', x:100, y:58},
@@ -555,7 +667,7 @@ const ZONES = [
 const zoneMask = list => (list||[]).reduce((m, k) => { const i = ZONES.findIndex(z => z.k === k); return i < 0 ? m : (m | (1 << i)) >>> 0; }, 0);
 const maskZones = m => ZONES.filter((z, i) => (m >>> i) & 1).map(z => z.k);
 const zoneName = k => ZONES.find(z => z.k === k)?.n || k;
-const isAdv = () => !!ROOT.advanced;
+const isAdv = () => true;                 // plus de mode « 4321 » : tout est accessible avec le code enseignant
 function scaleColor(v){ return ['#D0161B','#E3401B','#F07000','#F59E0B','#FFD000','#C8D93A','#86DC96','#3FB65C','#1E8E3E','#0B4F1C'][Math.max(1,Math.min(10,v))-1]; }
 /* Échelles 1 → 10 (du moins bien au mieux). État : inspiré de l'échelle de Borg (ressenti de fatigue / forme). */
 const SCALES = {
@@ -576,8 +688,7 @@ function wellBlock(n, sid, when){
       <div class="row" style="margin-top:8px"><button class="btn ${dl.length?'red':''}" data-action="painOpen">🩹 Douleurs : ${dl.length ? esc(dl.map(zoneName).join(', ')) : 'aucune'}</button></div></section>`;
   }
   return `<section class="well-sec"><h2>🌇 Fin de leçon</h2>
-    ${scale10('Mon état en fin de leçon', '😮‍💨', r.fa, `data-action="well" data-f="fa"`)}
-    ${scale10('Ma motivation', '🔥', r.mo, `data-action="well" data-f="mo"`, 'motiv')}</section>`;
+    ${scale10('Ma forme en fin de leçon', '😮‍💨', r.fa, `data-action="well" data-f="fa"`)}</section>`;
 }
 function bodySVG(sel){
   const on = k => sel.includes(k);
@@ -635,7 +746,7 @@ function painModal(){
 }
 
 
-/* ---------- Classe « Test » (mode 4321) : données inventées pour essayer l'appli ---------- */
+/* ---------- Classe « Test » : données inventées pour essayer l'appli (cycle de 7 leçons, leçon du jour : 6) ---------- */
 function makeTestClass(){
   const R = (a, b) => a + Math.floor(Math.random() * (b - a + 1));
   const pick = arr => arr[Math.floor(Math.random() * arr.length)];
@@ -645,32 +756,36 @@ function makeTestClass(){
   const c = newClassState('Classe Test', old ? old.id : undefined);
   ROOT.classes[c.id] = c; useClass(c.id);
   const st = S.settings;
-  Object.assign(st, { nbLessons:9, baseCourses:6, baseTirs:6, timeS:6, plotsS:8, plotsB:8, firstS:15, firstB:4, stepB:2, nbGroups:4, current:9 });
+  Object.assign(st, { nbLessons:7, baseCourses:6, baseTirs:6, timeS:6, plotsS:8, plotsB:8, firstS:15, firstB:4, stepB:2, nbGroups:4, current:6 });
   const prenoms = [...PRENOMS].sort(() => Math.random() - .5).slice(0, 24);
   prenoms.forEach((p, i) => S.students.push({ id:newStudentId(), nom: NOMS[i], prenom:p, grp: 0 }));
   [...S.students].sort(() => Math.random() - .5).forEach((s, i) => s.grp = (i % 4) + 1);
-  const kinds = { 1:'diag', 4:'inter', 9:'finale' };
-  for (let n = 1; n <= 9; n++) { const L = lesson(n); L.kind = kinds[n]; L.title = kinds[n] ? '' : ['','','Courir à sa cible','Enchaîner course et tir','','Gérer son effort','Régularité','Préparer l\'évaluation'][n-1] || '';
-    L.source = n === 1 || n === 4 ? 'none' : n === 9 ? 'projet' : n < 4 ? 'diag' : 'inter'; }
+  /* L1 diag · L2 Posture de départ · L3 Premiers appuis · L4 diag intermédiaire · L5 Maintien de la vitesse · L6 thème à choisir · L7 évaluation du projet */
+  const plan = { 1:['diag'], 2:['theme','pdep'], 3:['theme','papp'], 4:['inter'], 5:['theme','mvit'], 6:['theme', null], 7:['finale'] };
+  for (let n = 1; n <= 7; n++) { const L = lesson(n), [k, th] = plan[n]; L.kind = k; L.title = '';
+    if (k === 'theme') L.th = th ? snapTheme(themeById(th) || DEFAULT_THEMES.find(t => t.id === th)) : null;
+    L.source = n === 1 || n === 4 ? 'none' : n === 7 ? 'projet' : n < 4 ? 'diag' : 'inter'; }
   const zones = ZONES.map(z => z.k);
   S.students.forEach(s => {
-    const lvS = 2 + Math.random() * 3.5, lvB = 2 + Math.random() * 3.5, prog = .15 + Math.random() * .35, moral = R(4, 8);
-    for (let n = 1; n <= 8; n++) {
+    const lvS = 2 + Math.random() * 3.5, lvB = 2 + Math.random() * 3.5, prog = .15 + Math.random() * .35, moral = R(4, 8), motr = 1.3 + Math.random() * 2.2;
+    for (let n = 1; n <= 5; n++) {
       const L = lesson(n), x = Math.random();
       if (x < .05) { L.att[s.id] = 'abs'; continue; }
       if (x < .08) { L.att[s.id] = 'inap'; continue; }
       const lv = (base) => Math.max(0, Math.min(8, Math.round(base + prog * (n - 1) + (Math.random() * 2.4 - 1.2))));
       const fb = Math.max(1, Math.min(10, moral + R(-2, 2)));
+      L.wb = L.wb || {}; L.wb[s.id] = { fb, dl: Math.random() < .12 ? [pick(zones)] : [] };
       S.results[n] = S.results[n] || {};
-      S.results[n][s.id] = { c: Array.from({length:6}, () => lv(lvS)), b: Array.from({length:6}, () => lv(lvB)),
-        fb, fa: Math.max(1, Math.min(10, fb + R(-3, 1))), mo: Math.max(1, Math.min(10, moral + R(-1, 2))),
-        dl: Math.random() < .12 ? [pick(zones)] : [], ts: now() - (9 - n) * 7 * 864e5, d: 'test' };
+      const r = { c: Array.from({length:6}, () => lv(lvS)), b: Array.from({length:6}, () => lv(lvB)),
+        fa: Math.max(1, Math.min(10, fb + R(-3, 1))), ts: now() - (7 - n) * 7 * 864e5, d: 'test' };
+      const th = L.kind === 'theme' && L.th;
+      if (th) { r.ob = th.cr.map(() => Math.max(1, Math.min(4, Math.round(motr + n * .12 + Math.random() * 1.6 - .8)))); r.oth = th.id; }
+      S.results[n][s.id] = r;
     }
   });
   save();
 }
 
-/* ---------- Projet de l'élève (évaluation finale) ---------- */
 const finaleLesson = () => { for (let k = 1; k <= S.settings.nbLessons; k++) if (isFinale(k)) return k; return S.settings.nbLessons; };
 function suggest(sid, a){
   const F = finaleLesson(), byL = [];
@@ -694,21 +809,22 @@ function viewProjetTiles(){
 function viewProjetDetail(){
   const sid = UI.sid, s = student(sid); if (!s) return '';
   const N = S.settings.nbLessons, F = finaleLesson(), P = S.projects[sid] || {};
-  const D = UI.draft && UI.draft.sid === sid ? UI.draft : (UI.draft = { sid, formeJ: P.formeJ ?? null, motivJ: P.motivJ ?? null, cibleS: P.cibleS ?? null, cibleB: P.cibleB ?? null });
+  const D = UI.draft && UI.draft.sid === sid ? UI.draft : (UI.draft = { sid, formeJ: P.formeJ ?? null, cibleS: P.cibleS ?? null, cibleB: P.cibleB ?? null });
   let rows = '';
-  const painCount = {}; const fbs = [], fas = [], mos = [];
+  const painCount = {}; const fbs = [], fas = [];
   for (let n = 1; n <= N; n++) {
     if (n === F) continue;
     const r = res(n, sid) || {}, at = attOf(n, sid);
-    const has = vals(r.c).length || vals(r.b).length || r.fb || r.fa || r.mo;
+    const fb = fbOf(n, sid), dl = dlOf(n, sid);
+    const has = vals(r.c).length || vals(r.b).length || fb || r.fa;
     if (!has && !at) continue;
-    (r.dl || []).forEach(k => painCount[k] = (painCount[k] || 0) + 1);
-    if (r.fb) fbs.push(r.fb); if (r.fa) fas.push(r.fa); if (r.mo) mos.push(r.mo);
+    dl.forEach(k => painCount[k] = (painCount[k] || 0) + 1);
+    if (fb) fbs.push(fb); if (r.fa) fas.push(r.fa);
     const cell = a => { const t = targetInfo(n, sid, a).value, v = perf(n, sid, a);
       return `<div class="pj-sc">${t!=null?`<span class="pj-t">🎯${t}</span>`:''}${v.map(x => `<span class="sc ${scoreCls(x, t)}">${x ?? '—'}</span>`).join('')}</div>`; };
     const wv = v => v ? `<span class="wv" style="background:${scaleColor(v)};color:${v>=5&&v<=7?'#0A1633':'#fff'}">${v}</span>` : '<span class="muted">—</span>';
     rows += `<tr><td><b>L${n}</b><div class="ls-title">${esc(lessonTitle(n))}</div>${at==='abs'?'<span class="tag abs">Absent</span>':at==='inap'?'<span class="tag inapte">Inapte</span>':''}</td>
-      <td>${cell('s')}</td><td>${cell('b')}</td><td class="c">${wv(r.fb)}</td><td>${(r.dl||[]).map(zoneName).join(', ') || '—'}</td><td class="c">${wv(r.fa)}</td><td class="c">${wv(r.mo)}</td></tr>`;
+      <td>${cell('s')}</td><td>${cell('b')}</td><td class="c">${wv(fb)}</td><td>${dl.map(zoneName).join(', ') || '—'}</td><td class="c">${wv(r.fa)}</td></tr>`;
   }
   const sum = a => { const g = suggest(sid, a); if (!g) return `<div class="muted">Pas encore de données</div>`;
     return `<div class="pj-sum">Meilleure perf : <b>${pts(g.best)}</b> · Moyenne récente : <b>${fmt(g.moy)}</b> · Cible réussie : <b>${g.rate!=null?Math.round(g.rate*100)+' %':'—'}</b> des tentatives ·
@@ -716,7 +832,7 @@ function viewProjetDetail(){
   const pains = Object.entries(painCount).sort((a,b)=>b[1]-a[1]);
   const choose = a => { const g = suggest(sid, a), cur = D[a==='s'?'cibleS':'cibleB'];
     let reco = 'conseillee';
-    if (D.formeJ != null && D.formeJ <= 4) reco = 'prudente'; else if (D.formeJ != null && D.formeJ >= 8 && (D.motivJ ?? 0) >= 7) reco = 'ambitieuse';
+    if (D.formeJ != null && D.formeJ <= 4) reco = 'prudente'; else if (D.formeJ != null && D.formeJ >= 8) reco = 'ambitieuse';
     const opt = (k, lbl) => g ? `<button class="pj-opt ${cur===g[k]?'on':''} ${reco===k?'reco':''}" data-action="pjSet" data-a="${a}" data-v="${g[k]}"><small>${lbl}${reco===k?' · conseil':''}</small><b>${pts(g[k])}</b><small>${esc(ACT[a].unit(g[k]))}</small></button>` : '';
     return `<div class="pj-choice"><h3>${ACT[a].ico} Ma cible ${a==='s'?'en sprint':'au tir'}</h3>
       <div class="pj-opts">${opt('prudente','Prudente')}${opt('conseillee','Conseillée')}${opt('ambitieuse','Ambitieuse')}</div>
@@ -724,14 +840,14 @@ function viewProjetDetail(){
   return `<div class="entry-name">${band(sid)}<div class="who">${esc(nameOf(sid))}</div><span class="muted" style="font-weight:800">Projet · évaluation finale (L${F})</span>
       <button class="btn" data-action="go" data-view="projet" style="margin-left:auto">← Retour aux élèves</button></div>
     <div class="card strong compact"><h2>📋 Mon bilan, leçon par leçon</h2>
-      <div class="pj-table-wrap"><table class="pj-table"><tr><th>Leçon</th><th>🏃 Sprint</th><th>🏀 Tir</th><th>💪 Forme avant</th><th>🩹 Douleurs</th><th>😮‍💨 Forme après</th><th>🔥 Motivation</th></tr>${rows || '<tr><td colspan="7" class="muted">Pas encore de données</td></tr>'}</table></div></div>
+      <div class="pj-table-wrap"><table class="pj-table"><tr><th>Leçon</th><th>🏃 Sprint</th><th>🏀 Tir</th><th>💪 Forme avant</th><th>🩹 Douleurs</th><th>😮‍💨 Forme après</th></tr>${rows || '<tr><td colspan="6" class="muted">Pas encore de données</td></tr>'}</table></div></div>
+    ${obsBilan(sid) ? `<div class="card strong compact"><h2>👀 Mes critères observés</h2>${obsBilan(sid)}</div>` : ''}
     <div class="card strong compact"><h2>🔎 En résumé</h2>
       <div><b>🏃 Sprint</b> ${sum('s')}</div><div style="margin-top:6px"><b>🏀 Tir</b> ${sum('b')}</div>
-      <div style="margin-top:6px">💪 Forme avant : <b>${fbs.length?fmt(avg(fbs)):'—'}</b>/10 · 😮‍💨 après : <b>${fas.length?fmt(avg(fas)):'—'}</b>/10 · 🔥 Motivation : <b>${mos.length?fmt(avg(mos)):'—'}</b>/10
+      <div style="margin-top:6px">💪 Forme avant : <b>${fbs.length?fmt(avg(fbs)):'—'}</b>/10 · 😮‍💨 après : <b>${fas.length?fmt(avg(fas)):'—'}</b>/10
         ${pains.length?` · 🩹 Douleurs signalées : ${pains.map(([k,c])=>`${esc(zoneName(k))} (${c})`).join(', ')}`:''}</div></div>
     <div class="card strong compact"><h2>🏁 Aujourd'hui : évaluation finale</h2>
-      ${scale10('Mon état de forme aujourd\'hui', '💪', D.formeJ, `data-action="pjWell" data-f="formeJ"`)}
-      ${scale10('Ma motivation pour cette leçon', '🔥', D.motivJ, `data-action="pjWell" data-f="motivJ"`, 'motiv')}</div>
+      ${scale10('Mon état de forme aujourd\'hui', '💪', D.formeJ, `data-action="pjWell" data-f="formeJ"`)}</div>
     <div class="card strong compact"><div class="pj-choices">${choose('s')}${choose('b')}</div>
       <label class="field" style="margin-top:10px">Mon projet<textarea id="pj-text" style="min-height:70px">${esc(P.texte||'')}</textarea></label>
       <div class="btn-row" style="margin-top:10px"><button class="btn green" data-action="pjSave">💾 Valider mon projet</button>
@@ -800,6 +916,7 @@ function viewStatsDetail(){
     <div class="card strong"><h2>💡 Conseils</h2>${advices(sid).map(a=>`<div class="advice ${a.cls}">${a.t}</div>`).join('')}</div>
     <div class="card"><b>Couleurs : écart entre tes points et ta cible</b>${legend()}</div>
     <div class="stats-cols">${statsColumn(sid, 's')}${statsColumn(sid, 'b')}</div>
+    ${obsBilan(sid) ? `<div class="card strong"><h2>👀 Mes critères observés</h2>${obsBilan(sid)}</div>` : ''}
     <div class="card strong" id="projet"><h2>📝 Mon projet pour la dernière leçon (leçon ${N})</h2>
       
       ${projRow('s')}${projRow('b')}
@@ -814,8 +931,8 @@ function viewStatsDetail(){
    Espace enseignant
    --------------------------------------------------------------------- */
 /* ---------------------------------------------------------------------
-   Compétences générales D2 / D3 / D4 (mode 4321)
-   D4 : cohérence entre l'effort ressenti (forme avant − état en fin de leçon) et le résultat (écart à la cible)
+   Compétence D4 : cohérence entre l'effort ressenti (forme notée à l'appel − forme en fin de leçon)
+   et le résultat (écart à la cible)
    --------------------------------------------------------------------- */
 const COMP_LV = [null,
   { n:'Insuffisante', c:'#D0161B', f:'#fff' },
@@ -823,8 +940,6 @@ const COMP_LV = [null,
   { n:'Satisfaisante', c:'#86DC96', f:'#0A1633' },
   { n:'Très bonne', c:'#0B4F1C', f:'#fff' }];
 const COMP_D = {
-  D2: { ico:'🧭', t:"S'approprier par la pratique physique et sportive, des méthodes et outils" },
-  D3: { ico:'🤝', t:'Partager des règles, assumer des rôles et responsabilités' },
   D4: { ico:'❤️', t:'Apprendre à entretenir sa santé par une activité physique régulière, raisonnée et raisonnable',
         s:'Connaître et utiliser des indicateurs objectifs pour caractériser l\'effort physique.' } };
 /* lignes : fatigue ressentie (aucune / modérée / forte) ; colonnes : résultat (sous la cible / proche / au-dessus) */
@@ -837,16 +952,17 @@ function persoRef(n, sid, a){                       // sans cible : moyenne de l
 }
 function d4Lesson(n, sid){
   if (attOf(n, sid)) return null;
-  const r = res(n, sid) || {};
+  const r = res(n, sid) || {}, fb = fbOf(n, sid);
   const ds = [];
   ['s','b'].forEach(a => { const v = vals(perf(n, sid, a)); if (!v.length) return;
     const t = targetInfo(n, sid, a).value, ref = t != null ? t : persoRef(n, sid, a);
     if (ref != null) ds.push(avg(v) - ref); });
   const R = ds.length ? Math.round(avg(ds) * 10) / 10 : null;   // arrondi au dixième (comme affiché)
-  const E = r.fb && r.fa ? r.fb - r.fa : null;
-  if (R == null || E == null) return { lv:null, E, R, why: E == null ? 'ressenti incomplet' : 'pas de résultat' };
+  const E = fb && r.fa ? fb - r.fa : null;
+  if (R == null && E == null && !fb && !r.fa) return null;
+  if (R == null || E == null) return { lv:null, E, R, why: E == null ? 'forme incomplète' : 'pas de résultat' };
   const eb = E <= 0 ? 0 : E <= 2 ? 1 : 2, rb = R < -1 ? 0 : R < 1 ? 1 : 2;
-  return { lv: D4_MAT[eb][rb], E, R, why: `${E_TXT[eb]} (forme ${r.fb} → ${r.fa}) · ${R_TXT[rb]} (${R >= 0 ? '+' : ''}${fmt(R)} pt)` };
+  return { lv: D4_MAT[eb][rb], E, R, why: `${E_TXT[eb]} (forme ${fb} → ${r.fa}) · ${R_TXT[rb]} (${R >= 0 ? '+' : ''}${fmt(R)} pt)` };
 }
 function d4Suggest(sid){
   const w = [0,0,0,0,0], list = [];
@@ -856,72 +972,52 @@ function d4Suggest(sid){
   let best = 1; for (let k = 2; k <= 4; k++) if (w[k] >= w[best]) best = k;
   return best;
 }
-function compAids(sid){
-  const N = S.settings.nbLessons, P = S.projects[sid];
-  let pres = 0, inap = 0, abs = 0, done = 0, well = 0, ok = 0, tot = 0, run = 0;
-  for (let n = 1; n <= N; n++) {
-    const at = attOf(n, sid), r = res(n, sid) || {};
-    const has = vals(r.c).length || vals(r.b).length;
-    if (at === 'abs') { abs++; continue; } if (at === 'inap') { inap++; continue; }
-    if (!has && !r.fb && !r.fa) continue;
-    run++; pres++;
-    if (isComplete(n, sid)) done++;
-    if (r.fb && r.fa && r.mo) well++;
-    ['s','b'].forEach(a => { const t = targetInfo(n, sid, a).value; if (t != null) vals(perf(n, sid, a)).forEach(v => { tot++; if (v >= t) ok++; }); });
-  }
-  return { run, pres, abs, inap, done, well, rate: tot ? ok / tot : null, projet: !!(P && P.cibleS != null && P.cibleB != null) };
-}
 const compDot = (lv, sug, big) => lv ? `<span class="cdot ${big?'big':''}" style="background:${COMP_LV[lv].c};color:${COMP_LV[lv].f}" title="${COMP_LV[lv].n}"></span>`
   : sug ? `<span class="cdot sug ${big?'big':''}" style="border-color:${COMP_LV[sug].c};background:${COMP_LV[sug].c}55" title="Proposé : ${COMP_LV[sug].n}"></span>`
   : `<span class="cdot none ${big?'big':''}" title="Non évalué"></span>`;
 function profComp(){
   if (!S.students.length) return `<div class="card strong center">Aucun élève</div>`;
-  return `<div class="card strong compact"><h2>🎓 Compétences générales</h2>${classPicker()}
-      <div class="comp-legend">${[1,2,3,4].map(k => `${compDot(k)} ${COMP_LV[k].n}`).join(' · ')} · ${compDot(null, 3)} proposé par l'appli (D4) · ${compDot(null)} non évalué</div>
-      <div class="comp-legend">${Object.entries(COMP_D).map(([k, d]) => `<b>${k}</b> ${d.ico} « ${esc(d.t)} »`).join('<br>')}</div></div>
+  return `<div class="card strong compact"><h2>❤️ Compétence D4</h2>${classPicker()}
+      <div class="comp-legend"><b>D4</b> « ${esc(COMP_D.D4.t)} »<br><i>« ${esc(COMP_D.D4.s)} »</i></div>
+      <div class="comp-legend">${[1,2,3,4].map(k => `${compDot(k)} ${COMP_LV[k].n}`).join(' · ')} · ${compDot(null, 3)} proposé par l'appli · ${compDot(null)} non évalué</div></div>
     ${filterBar()}<div class="tiles">${sortedStudents().filter(passFilter).map(s => { const C = compOf(s.id), sug = d4Suggest(s.id);
-      const all = C.D2 && C.D3 && C.D4;
-      return `<button class="tile ${all ? 'done' : ''}" data-action="compDetail" data-sid="${s.id}">${band(s.id)}${all ? '<span class="check">✓</span>' : ''}
+      return `<button class="tile ${C.D4 ? 'done' : ''}" data-action="compDetail" data-sid="${s.id}">${band(s.id)}${C.D4 ? '<span class="check">✓</span>' : ''}
         <span class="name">${esc(nameOf(s.id))}</span>
-        <span class="comp-row"><span>D2 ${compDot(C.D2)}</span><span>D3 ${compDot(C.D3)}</span><span>D4 ${compDot(C.D4, sug)}</span></span></button>`; }).join('')}</div>`;
+        <span class="comp-row"><span>D4 ${compDot(C.D4, sug)}</span><span class="muted" style="font-size:14px">${C.D4 ? COMP_LV[C.D4].n : sug ? 'proposé : ' + COMP_LV[sug].n : ''}</span></span></button>`; }).join('')}</div>`;
 }
 function profCompDetail(){
   const sid = UI.sid, s = student(sid); if (!s) return profComp();
-  const N = S.settings.nbLessons, C = compOf(sid), sug = d4Suggest(sid), ai = compAids(sid);
+  const N = S.settings.nbLessons, C = compOf(sid), sug = d4Suggest(sid);
   const wv = v => v ? `<span class="wv" style="background:${scaleColor(v)};color:${v>=5&&v<=7?'#0A1633':'#fff'}">${v}</span>` : '<span class="muted">—</span>';
   const gap = a => n => { const v = vals(perf(n, sid, a)); if (!v.length) return '<span class="muted">—</span>';
     const t = targetInfo(n, sid, a).value; if (t == null) return `${fmt(avg(v))} <small class="muted">(sans cible)</small>`;
     const d = avg(v) - t; return `<span class="sc ${scoreCls(Math.round(avg(v)), t)}">${d >= 0 ? '+' : ''}${fmt(d)}</span>`; };
   let rows = '';
   for (let n = 1; n <= N; n++) {
-    const at = attOf(n, sid), r = res(n, sid) || {};
-    const has = vals(r.c).length || vals(r.b).length || r.fb || r.fa || r.mo;
+    const at = attOf(n, sid), r = res(n, sid) || {}, fb = fbOf(n, sid), dl = dlOf(n, sid);
+    const has = vals(r.c).length || vals(r.b).length || fb || r.fa;
     if (!has && !at) continue;
     const d = d4Lesson(n, sid);
     rows += `<tr><td><b>L${n}</b><div class="ls-title">${esc(lessonTitle(n))}</div>${at==='abs'?'<span class="tag abs">Absent</span>':at==='inap'?'<span class="tag inapte">Inapte</span>':''}</td>
       <td class="c">${at ? '' : gap('s')(n)}</td><td class="c">${at ? '' : gap('b')(n)}</td>
-      <td class="c">${wv(r.fb)}</td><td class="c">${wv(r.fa)}</td><td class="c">${wv(r.mo)}</td>
-      <td class="c">${at ? '' : isComplete(n, sid) ? '✓' : '<span class="muted">incomplète</span>'}</td>
+      <td class="c">${wv(fb)}</td><td>${dl.length ? esc(dl.map(zoneName).join(', ')) : '—'}</td><td class="c">${wv(r.fa)}</td>
       <td>${d ? `${compDot(d.lv, null, true)} <span class="d4-why">${d.lv ? `<b>${COMP_LV[d.lv].n}</b> · ` : ''}${esc(d.why)}</span>` : ''}</td></tr>`;
   }
-  const pick = k => `<div class="comp-pick"><div class="comp-h"><b>${k}</b> ${COMP_D[k].ico} « ${esc(COMP_D[k].t)} »</div>
-    ${COMP_D[k].s ? `<div class="muted comp-s">« ${esc(COMP_D[k].s)} »</div>` : ''}
-    <div class="comp-aid">${k === 'D2' ? `Projet de l'élève : <b>${ai.projet ? '✓ rempli' : '✗ non rempli'}</b> · Saisies complètes : <b>${ai.done}/${ai.run}</b> · Ressentis renseignés : <b>${ai.well}/${ai.run}</b> · Cible atteinte : <b>${ai.rate != null ? Math.round(ai.rate*100) + ' %' : '—'}</b> des tentatives`
-      : k === 'D3' ? `Leçons pratiquées : <b>${ai.pres}</b> · Absences : <b>${ai.abs}</b> · Inaptitudes : <b>${ai.inap}</b> · Saisies complètes : <b>${ai.done}/${ai.run}</b>`
-      : `Proposition de l'appli : ${sug ? `${compDot(sug)} <b>${COMP_LV[sug].n}</b> (majorité des leçons, les dernières comptent plus)` : '<b>—</b> (pas assez de données)'}`}</div>
-    <div class="comp-btns">${[1,2,3,4].map(v => `<button class="cbtn ${C[k]===v?'on':''} ${k==='D4'&&sug===v&&!C[k]?'reco':''}" style="--cc:${COMP_LV[v].c};--cf:${COMP_LV[v].f}" data-action="compSet" data-k="${k}" data-v="${v}">${COMP_LV[v].n}</button>`).join('')}
-      ${C[k] ? `<button class="btn ghost xs" data-action="compSet" data-k="${k}" data-v="0">Effacer</button>` : ''}</div></div>`;
   return `<div class="entry-name">${band(sid)}<div class="who">${esc(nameOf(sid))}</div>
       <button class="btn" data-action="profTab" data-tab="comp" style="margin-left:auto">← Retour aux élèves</button></div>
     <div class="card strong compact"><h2>📋 Leçon par leçon</h2>
-      <div class="pj-table-wrap"><table class="pj-table"><tr><th>Leçon</th><th>🏃 Écart cible</th><th>🏀 Écart cible</th><th>💪 Forme avant</th><th>😮‍💨 Fin de leçon</th><th>🔥 Motivation</th><th>✍️ Saisie</th><th>❤️ D4 · ressenti / résultat</th></tr>
-        ${rows || '<tr><td colspan="8" class="muted">Pas encore de données</td></tr>'}</table></div>
+      <div class="pj-table-wrap"><table class="pj-table"><tr><th>Leçon</th><th>🏃 Écart cible</th><th>🏀 Écart cible</th><th>💪 Forme (appel)</th><th>🩹 Douleurs</th><th>😮‍💨 Fin de leçon</th><th>❤️ D4 · ressenti / résultat</th></tr>
+        ${rows || '<tr><td colspan="7" class="muted">Pas encore de données</td></tr>'}</table></div>
       <details class="d4-rule"><summary>Comment l'appli calcule D4</summary>
-        <p>Fatigue ressentie = forme avant − état en fin de leçon (0 ou moins : aucune · 1 à 2 : modérée · 3 et plus : forte).<br>
+        <p>Fatigue ressentie = forme notée à l'appel − forme en fin de leçon (0 ou moins : aucune · 1 à 2 : modérée · 3 et plus : forte).<br>
         Résultat = moyenne des écarts à la cible en points, sprint et tir (moins de −1 : sous la cible · de −1 à +1 : proche · +1 et plus : au-dessus). Sans cible, la référence est la moyenne de l'élève sur les autres leçons.</p>
         <table class="simple"><tr><th></th><th>Sous la cible</th><th>Proche</th><th>Au-dessus</th></tr>
           ${D4_MAT.map((row, i) => `<tr><th>${E_TXT[i]}</th>${row.map(v => `<td>${compDot(v)} ${COMP_LV[v].n}</td>`).join('')}</tr>`).join('')}</table></details></div>
-    <div class="card strong compact"><h2>🎓 Couleur finale (décision de l'enseignant)</h2>${pick('D2')}${pick('D3')}${pick('D4')}</div>`;
+    <div class="card strong compact"><h2>❤️ Couleur finale D4 (décision de l'enseignant)</h2>
+      <div class="comp-pick"><div class="comp-h"><b>D4</b> « ${esc(COMP_D.D4.t)} »</div><div class="muted comp-s">« ${esc(COMP_D.D4.s)} »</div>
+      <div class="comp-aid">Proposition de l'appli : ${sug ? `${compDot(sug)} <b>${COMP_LV[sug].n}</b> (majorité des leçons, les dernières comptent plus)` : '<b>—</b> (pas assez de données)'}</div>
+      <div class="comp-btns">${[1,2,3,4].map(v => `<button class="cbtn ${C.D4===v?'on':''} ${sug===v&&!C.D4?'reco':''}" style="--cc:${COMP_LV[v].c};--cf:${COMP_LV[v].f}" data-action="compSet" data-k="D4" data-v="${v}">${COMP_LV[v].n}</button>`).join('')}
+        ${C.D4 ? `<button class="btn ghost xs" data-action="compSet" data-k="D4" data-v="0">Effacer</button>` : ''}</div></div></div>`;
 }
 function openProf(){
   if (UI.profUnlocked) return go('prof');
@@ -936,8 +1032,7 @@ function openProf(){
     if (k === '⌫') code = code.slice(0,-1); else if (code.length < 4) code += k;
     dots.forEach((d,i)=>d.classList.toggle('f', i < code.length));
     if (code.length === 4) {
-      if (code === String(ROOT.pin || '0000') || code === ADV_PIN) { ROOT.advanced = code === ADV_PIN;
-        if (ROOT.advanced && !Object.values(ROOT.classes).some(c => c.settings.className === 'Classe Test')) { const keep = S.id; makeTestClass(); useClass(keep); toast('🧪 Classe Test créée', 3000); }
+      if (code === String(ROOT.pin || '0000')) { delete ROOT.advanced;
         save(); UI.profUnlocked = true; UI.profTab = 'menu'; closeModal(); go('prof'); }
       else { toast('Code incorrect'); code=''; dots.forEach(d=>d.classList.remove('f')); }
     }
@@ -990,7 +1085,7 @@ function profMenu(){
       <button class="pm-btn" data-action="profTab" data-tab="appel"><span class="ico">📅</span>Leçon<small>Appel · groupes du jour · cibles</small></button>
       <button class="pm-btn" data-action="profTab" data-tab="export"><span class="ico">📁</span>Export / Sauvegarde<small>Excel · QR tablettes · sauvegarde</small></button>
       ${isAdv() ? `<button class="pm-btn adv" data-action="go" data-view="projet"><span class="ico">🎯</span>Projet de l'élève<small>Bilan · forme · cibles de l'évaluation finale</small></button>
-        <button class="pm-btn adv" data-action="profTab" data-tab="comp"><span class="ico">🎓</span>Compétences<small>D2 · D3 · D4 · couleur finale</small></button>
+        <button class="pm-btn adv" data-action="profTab" data-tab="comp"><span class="ico">❤️</span>Compétence D4<small>Forme · résultat · couleur finale</small></button>
         <button class="pm-btn adv" data-action="testClass"><span class="ico">🧪</span>Classe Test<small>Ouvrir · régénérer des données inventées</small></button>` : ''}
     </div>`;
 }
@@ -1068,6 +1163,7 @@ function profCycle(){
         ${rangeField('Plots = pts max', st.plotsB, 'data-field="set" data-k="plotsB"', 1, 20)}
       </div>
       <details><summary style="font-weight:900;cursor:pointer">📏 Mise en place des plots</summary>${plotTable()}</details></div>
+    ${profThemes()}
     <div class="card compact"><h2>Leçons</h2>${rows}</div>`;
 }
 function sourceSelect(n, label=''){
@@ -1084,8 +1180,11 @@ function sourceSelect(n, label=''){
   return `<div class="src-sel">${label?`<label class="field grow">${label}`:'<label class="grow">'}<select data-field="source" data-n="${n}">${opts}</select></label>${calc}</div>`;
 }
 function kindSelect(n){
-  const k = kindOf(n);
-  return `<select data-field="kind" data-n="${n}" class="kind-sel">${Object.entries(KINDS).map(([v,t])=>`<option value="${v}" ${k===v?'selected':''}>${t}</option>`).join('')}</select>`;
+  const k = kindOf(n), th = lesson(n).th, cur = k === 'theme' ? (th ? 'th:' + th.id : 'theme') : k;
+  const o = (v, t) => `<option value="${v}" ${cur===v?'selected':''}>${t}</option>`;
+  const T = themes(), orphan = th && !themeById(th.id) ? o('th:' + th.id, `${ACT[th.a].ico} ${esc(th.n)}`) : '';
+  return `<select data-field="kind" data-n="${n}" class="kind-sel">${['manuel','diag','inter','finale'].map(v => o(v, KINDS[v])).join('')}
+    <optgroup label="Thèmes de leçon">${T.map(t => o('th:' + t.id, `${ACT[t.a].ico} ${esc(t.n)}`)).join('')}${orphan}${o('theme', '❔ Thème à choisir')}</optgroup></select>`;
 }
 function profCibles(){
   const n = curLesson();
@@ -1127,11 +1226,14 @@ function profEleves(){
 function profAppel(){
   const n = curLesson(), L = lesson(n);
   const abs = S.students.filter(s=>attOf(n,s.id)==='abs').length, inap = S.students.filter(s=>attOf(n,s.id)==='inap').length;
-  return `<div class="card strong"><h2>Appel · Leçon ${n}</h2><div class="muted" style="font-weight:700">${S.students.length-abs-inap} présent(s) · ${abs} absent(s) · ${inap} inapte(s).</div></div>
+  const nw = S.students.filter(s => (L.wb || {})[s.id]?.fb).length;
+  return `<div class="card strong"><h2>Appel · Leçon ${n}</h2><div class="muted" style="font-weight:700">${S.students.length-abs-inap} présent(s) · ${abs} absent(s) · ${inap} inapte(s) · forme notée : ${nw}/${S.students.length-abs}.</div></div>
     <div class="tiles">${sortedStudents().map(s => { const a = attOf(n,s.id);
+      const w = (L.wb || {})[s.id] || {}, dl = w.dl || [];
       return `<div class="att-tile ${a==='abs'?'abs':a==='inap'?'inapte':''}">${band(s.id)}<div class="name">${esc(nameOf(s.id))}</div>
         <div class="btn-row"><button class="btn ${a==='abs'?'abs-on':''}" data-action="att" data-sid="${s.id}" data-v="abs">Absent</button>
-        <button class="btn ${a==='inap'?'inapte-on':''}" data-action="att" data-sid="${s.id}" data-v="inap">Inapte</button></div></div>`; }).join('')}</div>`;
+        <button class="btn ${a==='inap'?'inapte-on':''}" data-action="att" data-sid="${s.id}" data-v="inap">Inapte</button></div>
+        ${a === 'abs' ? '' : `<button class="btn small well-btn" data-action="appelWell" data-sid="${s.id}">💪 ${w.fb ? `<span class="wv" style="background:${scaleColor(w.fb)};color:${w.fb>=5&&w.fb<=7?'#0A1633':'#fff'}">${w.fb}</span>` : '—'} · 🩹 ${dl.length ? `<b style="color:#D0161B">${esc(dl.map(zoneName).join(', '))}</b>` : 'aucune'}</button>`}</div>`; }).join('')}</div>`;
 }
 function profGroupes(){
   const G = nbGroups();
@@ -1284,11 +1386,11 @@ function exportXlsx(){
   const r2 = v => v == null ? '' : Math.round(v*100)/100;
   const head = ['Nom', 'Prénom', 'Affiché', 'Groupe'];
   for (let n = 1; n <= N; n++) head.push(`L${n} sprint cible`, `L${n} sprint moy.`, `L${n} basket cible`, `L${n} basket moy.`);
-  head.push('Projet : cible sprint', 'Projet : cible basket', 'Projet : forme du jour', 'Projet : motivation', 'Projet : texte');
+  head.push('Projet : cible sprint', 'Projet : cible basket', 'Projet : forme du jour', 'Projet : texte', 'D4 proposé', 'D4 final');
   const syn = [head];
   let maxA = 0; for (let n = 1; n <= N; n++) maxA = Math.max(maxA, nbAtt(n,'s'), nbAtt(n,'b'));
   const det = [['Nom','Prénom','Leçon','Titre','Statut','Épreuve','Cible (points)','Cible (plot)',
-    ...Array.from({length:maxA},(_,k)=>`Tentative ${k+1}`), 'Moyenne (points)', 'Meilleur (points)', 'Forme avant /10', 'Douleurs', 'Forme après /10', 'Motivation /10']];
+    ...Array.from({length:maxA},(_,k)=>`Tentative ${k+1}`), 'Moyenne (points)', 'Meilleur (points)', 'Forme (appel) /10', 'Douleurs (appel)', 'Forme fin de leçon /10', 'Thème', 'Critères observés', 'D4 de la leçon']];
   sortedStudents().forEach(s => {
     const nom = s.nom || '', pre = s.prenom || s.disp || '';
     const row = [nom, pre, nameOf(s.id), nbGroups() > 1 && s.grp ? groupName(s.grp) : ''];
@@ -1298,7 +1400,8 @@ function exportXlsx(){
         row.push(num(targetInfo(n, s.id, a).value), at==='abs' ? 'ABS' : at==='inap' ? 'INAPTE' : (v.length ? r2(avg(v)) : '')); });
     }
     const P = S.projects[s.id] || {};
-    row.push(num(P.cibleS), num(P.cibleB), num(P.formeJ), num(P.motivJ), P.texte || '');
+    const sg = d4Suggest(s.id), fin = compOf(s.id).D4;
+    row.push(num(P.cibleS), num(P.cibleB), num(P.formeJ), P.texte || '', sg ? COMP_LV[sg].n : '', fin ? COMP_LV[fin].n : '');
     syn.push(row);
     for (let n = 1; n <= N; n++) {
       const at = attOf(n, s.id);
@@ -1307,7 +1410,9 @@ function exportXlsx(){
         det.push([nom, pre, n, lessonTitle(n), at==='abs'?'Absent':at==='inap'?'Inapte':'Présent', ACT[a].label,
           num(ti.value), ti.value!=null ? ACT[a].unit(ti.value) : '',
           ...Array.from({length:maxA},(_,k)=> num(p[k])), v.length ? r2(avg(v)) : '', v.length ? Math.max(...v) : '',
-          ...(a === 's' ? (r0 => [num(r0.fb), (r0.dl||[]).map(zoneName).join(', '), num(r0.fa), num(r0.mo)])(res(n, s.id) || {}) : ['','','',''])]);
+          ...(a === 's' ? [num(fbOf(n, s.id)), dlOf(n, s.id).map(zoneName).join(', '), num((res(n, s.id) || {}).fa)] : ['','','']),
+          ...(th => th && th.a === a ? [th.n, (ob => ob ? th.cr.map((c, i) => `${c} : ${ob[i] ? OBS[ob[i]].n : '—'}`).join(' ; ') : '')(obsOf(n, s.id))] : ['',''])(lessonTheme(n)),
+          a === 's' ? (d => d && d.lv ? `${COMP_LV[d.lv].n} (${d.why})` : '')(d4Lesson(n, s.id)) : '']);
       });
     }
   });
@@ -1316,23 +1421,32 @@ function exportXlsx(){
   const w2 = XLSX.utils.aoa_to_sheet(det); w2['!cols'] = det[0].map((_,i)=>({wch: i===3?30:12}));
   XLSX.utils.book_append_sheet(wb, w1, 'Synthèse');
   XLSX.utils.book_append_sheet(wb, w2, 'Détail par leçon');
-  if (isAdv() || Object.keys(S.comp || {}).length) {
+  {
     const lvN = v => v ? COMP_LV[v].n : '';
     const ch = ['Nom', 'Prénom', 'Groupe'];
     for (let n = 1; n <= N; n++) ch.push(`L${n} D4`, `L${n} D4 détail`);
-    ch.push('D4 proposé', 'D2 final', 'D3 final', 'D4 final');
+    ch.push('D4 proposé', 'D4 final');
     const cs = [ch];
     sortedStudents().forEach(s => { const C = compOf(s.id);
       const row = [s.nom || '', s.prenom || s.disp || '', nbGroups() > 1 && s.grp ? groupName(s.grp) : ''];
       for (let n = 1; n <= N; n++) { const d = d4Lesson(n, s.id), at = attOf(n, s.id);
         row.push(at === 'abs' ? 'ABS' : at === 'inap' ? 'INAPTE' : d ? lvN(d.lv) : '', d ? d.why : ''); }
-      row.push(lvN(d4Suggest(s.id)), lvN(C.D2), lvN(C.D3), lvN(C.D4)); cs.push(row); });
-    const legendRows = [[], ['Domaines'], ...Object.entries(COMP_D).map(([k, d]) => [k, d.t])];
-    const w3 = XLSX.utils.aoa_to_sheet([...cs, ...legendRows]); w3['!cols'] = ch.map((h, i) => ({ wch: /détail/.test(h) ? 40 : i < 3 ? 16 : 14 }));
-    XLSX.utils.book_append_sheet(wb, w3, 'Compétences');
+      row.push(lvN(d4Suggest(s.id)), lvN(C.D4)); cs.push(row); });
+    const w3 = XLSX.utils.aoa_to_sheet([...cs, [], ['D4', COMP_D.D4.t], ['', COMP_D.D4.s]]); w3['!cols'] = ch.map((h, i) => ({ wch: /détail/.test(h) ? 40 : i < 3 ? 16 : 14 }));
+    XLSX.utils.book_append_sheet(wb, w3, 'Compétence D4');
   }
-  const lessons = []; for (let n = 1; n <= N; n++) lessons.push([n, lessonTitle(n), nbAtt(n,'s'), nbAtt(n,'b'), hasSource(n) ? `Résultats L${lesson(n).source} (${lesson(n).calc==='avg'?'moyenne':'meilleur'})` : (n===1?'À la main':'Reprise leçon précédente')]);
-  XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet([['Leçon','Titre','Sprints','Tirs basket','Cibles de base'], ...lessons]), 'Leçons');
+  {
+    const th = [];
+    for (let n = 1; n <= N; n++) { const t = lessonTheme(n); if (!t) continue;
+      const head2 = ['Nom', 'Prénom', 'Groupe', ...t.cr];
+      th.push([`L${n} · ${t.n} (${ACT[t.a].ico})`], head2);
+      sortedStudents().forEach(s => { const ob = obsOf(n, s.id), at = attOf(n, s.id);
+        th.push([s.nom || '', s.prenom || s.disp || '', nbGroups() > 1 && s.grp ? groupName(s.grp) : '', ...t.cr.map((c, i) => at === 'abs' ? 'ABS' : at === 'inap' ? 'INAPTE' : ob && ob[i] ? OBS[ob[i]].n : '')]); });
+      th.push([]); }
+    if (th.length) { const w4 = XLSX.utils.aoa_to_sheet(th); w4['!cols'] = [{wch:16},{wch:16},{wch:12},{wch:28},{wch:28},{wch:28},{wch:28},{wch:28}]; XLSX.utils.book_append_sheet(wb, w4, 'Critères observés'); }
+  }
+  const lessons = []; for (let n = 1; n <= N; n++) lessons.push([n, lessonTitle(n), lessonTheme(n) ? lessonTheme(n).cr.join(' · ') : '', nbAtt(n,'s'), nbAtt(n,'b'), hasSource(n) ? `Résultats L${lesson(n).source} (${lesson(n).calc==='avg'?'moyenne':'meilleur'})` : (n===1?'À la main':'Reprise leçon précédente')]);
+  XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet([['Leçon','Titre / thème','Critères','Sprints','Tirs basket','Cibles de base'], ...lessons]), 'Leçons');
   const plots = [['Plot / points','Sprint : vitesse (km/h)',`Sprint : distance en ${S.settings.timeS} s (m)`,'Basket : distance (m)']];
   for (let k = 1; k <= Math.max(maxPlots('s'), maxPlots('b')); k++)
     plots.push([k, k<=maxPlots('s')?spdS(k):'', k<=maxPlots('s')?Math.round(distS(k)*100)/100:'', k<=maxPlots('b')?distB(k):'']);
@@ -1423,6 +1537,8 @@ async function applyPacket(p){
     if (p.groupColors) S.settings.groupColors = p.groupColors;
     const L = lesson(p.settings.current);
     L.title = p.title; L.kind = p.kind === 'manuel' ? undefined : p.kind; if (L.kind) L.title = ''; L.nbCourses = p.nbC; L.nbTirs = p.nbT;
+    L.th = p.kind === 'theme' ? (p.th || null) : undefined; L.adv = {};
+    if (p.adv) list.forEach((s, i) => { if (p.adv[i]) L.adv[s.id] = p.adv[i]; });
     L.fixedS = {}; L.fixedB = {}; L.manual = {}; L.manualB = {}; L.adjust = {}; L.adjustB = {}; L.att = {}; L.grpOv = {};
     list.forEach((s, i) => { const r = p.rows[i]; if (!r) return;
       if (r.tS != null) L.fixedS[s.id] = r.tS; if (r.tB != null) L.fixedB[s.id] = r.tB;
@@ -1465,30 +1581,35 @@ function binNames(){
 }
 function binLesson(n){
   const cur = n || curLesson(), L = lesson(cur), st = S.settings, list = sortedStudents();
-  const w = BW(); w.u8('L'.charCodeAt(0)); w.u8(4);
+  const w = BW(); w.u8('L'.charCodeAt(0)); w.u8(5);
   w.id(S.id);
   w.u32(listHash(list.map(s => s.id)));
   [st.nbLessons, cur, st.baseCourses, st.baseTirs, st.plotsS, st.plotsB, st.ecartS, st.ecartB, nbAtt(cur,'s'), nbAtt(cur,'b')].forEach(v => w.u8(v));
   w.u8(st.firstS); w.u8(Math.round(st.timeS*10)); w.u8(Math.round(st.firstB*2)); w.u8(Math.round(st.stepB*2));
   w.u8(nbGroups()); for (let i = 0; i < nbGroups(); i++) w.u8(GIDX(st.groupColors[i]));
-  w.str(lessonTitle(cur), 80); w.u8(['manuel','diag','inter','finale'].indexOf(kindOf(cur))); w.u8(list.length);
+  w.str(lessonTitle(cur), 80); w.u8(KIND_IDX.indexOf(kindOf(cur))); w.u8(list.length);
   list.forEach(s => {
     const aS = +(L.adjust[s.id]||0), aB = +(L.adjustB[s.id]||0), at = attOf(cur, s.id);
     w.u8(nv(baseTarget(cur, s.id, 's'))); w.u8(nv(baseTarget(cur, s.id, 'b')));
     w.u8((aS<0?1:aS>0?2:0) | ((aB<0?1:aB>0?2:0)<<2) | ((at==='abs'?1:at==='inap'?2:0)<<4));
     w.u8(grpOf(s.id, cur));
   });
+  const th = lessonTheme(cur);                       // v5 : thème + critères + conseil de la fois précédente
+  w.u8(th ? 1 : 0);
+  if (th) { w.str(th.id, 8); w.str(th.n, 60); w.u8(th.a === 'b' ? 1 : 0); w.u8(th.cr.length); th.cr.forEach(c => w.str(c, 60));
+    list.forEach(s => { const a = pickAdvice(lastObs(cur, s.id)); w.u8(a ? a.i : 255); w.u8(a ? a.v : 0); w.u8(a ? a.k : 0); }); }
   return w.bytes();
 }
 function binResults(){
-  const w = BW(); w.u8('R'.charCodeAt(0)); w.u8(3); w.id(S.deviceId); w.id(S.id);
+  const w = BW(); w.u8('R'.charCodeAt(0)); w.u8(4); w.id(S.deviceId); w.id(S.id);
   const ents = [], projs = [];
   Object.entries(S.results).forEach(([n, byS]) => Object.entries(byS).forEach(([sid, r]) => { if (r.d === S.deviceId) ents.push([+n, sid, r]); }));
   Object.entries(S.projects).forEach(([sid, p]) => { if (p.d === S.deviceId) projs.push([sid, p]); });
   w.u16(ents.length);
   ents.forEach(([n, sid, r]) => { w.id(sid); w.u8(n); w.u32(Math.floor((r.ts||0)/1000));
     const c = r.c||[], b = r.b||[]; w.u8(c.length); c.forEach(v => w.u8(nv(v))); w.u8(b.length); b.forEach(v => w.u8(nv(v)));
-    w.u8(nv(r.fb)); w.u8(nv(r.fa)); w.u8(nv(r.mo)); w.u32(zoneMask(r.dl)); });
+    w.u8(nv(r.fb)); w.u8(nv(r.fa)); w.u8(nv(r.mo)); w.u32(zoneMask(r.dl));
+    const ob = r.ob || []; w.u8(ob.length); ob.forEach(v => w.u8(nv(v))); });
   w.u8(projs.length);
   projs.forEach(([sid, p]) => { w.id(sid); w.u8(nv(p.cibleS)); w.u8(nv(p.cibleB)); w.u32(Math.floor((p.ts||0)/1000)); w.str(p.texte||'', 600); w.u8(nv(p.formeJ)); w.u8(nv(p.motivJ)); });
   return { bytes: w.bytes(), count: ents.length + projs.length };
@@ -1511,11 +1632,14 @@ function binDecode(u){
     const bar = ver >= 2 ? { firstS: r.u8(), timeS: r.u8()/10, firstB: r.u8()/2, stepB: r.u8()/2 } : {};
     let grp = {}, groupColors = null;
     if (ver >= 3) { grp.nbGroups = r.u8(); groupColors = colors(ver >= 4 ? grp.nbGroups : 4); }
-    const title = r.str(), kind = ver >= 4 ? ['manuel','diag','inter','finale'][r.u8()] || 'manuel' : 'manuel', n = r.u8(), rows = [];
+    const title = r.str(), kind = ver >= 4 ? KIND_IDX[r.u8()] || 'manuel' : 'manuel', n = r.u8(), rows = [];
     for (let i = 0; i < n; i++) { const tS = vn(r.u8()), tB = vn(r.u8()), f = r.u8(), g = r.u8();
       rows.push({ tS, tB, aS: [0,-1,1][f&3], aB: [0,-1,1][(f>>2)&3], att: [null,'abs','inap'][(f>>4)&3], grp: ver >= 3 ? g : 0 }); }
+    let th = null, adv = [];
+    if (ver >= 5 && r.u8()) { th = { id: r.str(), n: r.str(), a: r.u8() ? 'b' : 's', cr: [] }; const nc = r.u8(); for (let i = 0; i < nc; i++) th.cr.push(r.str());
+      for (let i = 0; i < n; i++) { const ai = r.u8(), av = r.u8(), ak = r.u8(); adv.push(ai === 255 ? null : { i: ai, v: av, k: ak }); } }
     const [nbLessons, current, baseCourses, baseTirs, plotsS, plotsB, ecartS, ecartB, nbC, nbT] = v;
-    return { k:'lesson', cid, hash, groupColors, settings:{ nbLessons, current, baseCourses, baseTirs, plotsS, plotsB, ecartS, ecartB, ...bar, ...grp }, nbC, nbT, title, kind, rows };
+    return { k:'lesson', cid, hash, groupColors, settings:{ nbLessons, current, baseCourses, baseTirs, plotsS, plotsB, ecartS, ecartB, ...bar, ...grp }, nbC, nbT, title, kind, rows, th, adv };
   }
   if (t === 'R') {
     const from = r.id(), cid = ver >= 2 ? r.id() : null, n = r.u16(), results = {}, projects = {};
@@ -1524,6 +1648,7 @@ function binDecode(u){
       const nb = r.u8(), b = []; for (let k = 0; k < nb; k++) b.push(vn(r.u8()));
       const e = { c, b, ts, d: from };
       if (ver >= 3) { e.fb = vn(r.u8()); e.fa = vn(r.u8()); e.mo = vn(r.u8()); e.dl = maskZones(r.u32()); }
+      if (ver >= 4) { const no = r.u8(); if (no) { e.ob = []; for (let k = 0; k < no; k++) e.ob.push(vn(r.u8())); } }
       (results[les] = results[les] || {})[sid] = e; }
     const np = r.u8();
     for (let i = 0; i < np; i++) { const sid = r.id(), cS = vn(r.u8()), cB = vn(r.u8()), ts = r.u32()*1000, texte = r.str(true);
@@ -1547,14 +1672,14 @@ function packRP(results, projects){
   T = isFinite(T) ? Math.floor(T/1000) : 0;
   const R = {}, P = {};
   Object.entries(results||{}).forEach(([n, byS]) => { R[n] = {}; Object.entries(byS||{}).forEach(([sid, r]) => {
-    R[n][sid] = [r.c||[], r.b||[], Math.floor((r.ts||0)/1000) - T, di(r.d), r.fb ?? null, r.fa ?? null, r.mo ?? null, r.dl || []]; }); });
+    R[n][sid] = [r.c||[], r.b||[], Math.floor((r.ts||0)/1000) - T, di(r.d), r.fb ?? null, r.fa ?? null, r.mo ?? null, r.dl || [], r.ob || null]; }); });
   Object.entries(projects||{}).forEach(([sid, p]) => { P[sid] = [p.cibleS ?? null, p.cibleB ?? null, p.texte||'', Math.floor((p.ts||0)/1000) - T, di(p.d), p.formeJ ?? null, p.motivJ ?? null]; });
   return { T, D, R, P };
 }
 function unpackRP(z){
   const results = {}, projects = {};
   Object.entries(z.R||{}).forEach(([n, byS]) => { results[n] = {}; Object.entries(byS).forEach(([sid, a]) => {
-    results[n][sid] = { c:a[0], b:a[1], ts:(z.T + a[2])*1000, d:z.D[a[3]], fb:a[4] ?? null, fa:a[5] ?? null, mo:a[6] ?? null, dl:a[7] || [] }; }); });
+    results[n][sid] = { c:a[0], b:a[1], ts:(z.T + a[2])*1000, d:z.D[a[3]], fb:a[4] ?? null, fa:a[5] ?? null, mo:a[6] ?? null, dl:a[7] || [], ...(a[8] ? { ob:a[8] } : {}) }; }); });
   Object.entries(z.P||{}).forEach(([sid, a]) => { projects[sid] = { cibleS:a[0], cibleB:a[1], texte:a[2], ts:(z.T + a[3])*1000, d:z.D[a[4]], formeJ:a[5] ?? null, motivJ:a[6] ?? null }; });
   return { results, projects };
 }
@@ -1923,8 +2048,17 @@ const A = {
   goSaisie: () => { UI.filter = null; go('saisie'); },
   well: d => { const n = curLesson(), sid = UI.sid, v = +d.v; setRes(n, sid, r => { r[d.f] = r[d.f] === v ? null : v; }); render(); flagSaved(); },
   painOpen: () => painModal(),
+  appelWell: d => appelWellModal(d.sid),
+  obs: d => { const n = curLesson(), th = lessonTheme(n); if (!th) return; const i = +d.i, v = +d.v;
+    setRes(n, UI.sid, r => { const ob = Array.from({length: th.cr.length}, (_, j) => (r.ob || [])[j] ?? null); ob[i] = ob[i] === v ? null : v; r.ob = ob; r.oth = th.id; });
+    render(); flagSaved(); },
+  thToggle: () => { UI.thOpen = !UI.thOpen; render(); },
+  thAdd: () => { const id = rnd(4); themes().push({ id, n:'Nouveau thème', a:'s', cr:[] }); UI.thOpen = true; save(); render(); },
+  thDel: async d => { const t = themeById(d.id); if (!t) return;
+    if (!(await confirmBox('Supprimer « ' + esc(t.n) + ' » ?', 'Les leçons qui utilisent déjà ce thème le gardent.', 'Supprimer', true))) return;
+    ROOT.themes = themes().filter(x => x.id !== d.id); save(); render(); },
   testClass: async () => { const ex = Object.values(ROOT.classes).find(c => c.settings.className === 'Classe Test');
-    const ch = await choiceBox('🧪 Classe Test', '24 élèves inventés · 4 groupes · 9 leçons (L1 diagnostic, L4 intermédiaire, L9 finale) · 6 sprints de 6 s et 6 lancers, 8 points max.',
+    const ch = await choiceBox('🧪 Classe Test', '24 élèves inventés · 4 groupes · 7 leçons, leçon du jour : 6. L1 diagnostic · L2 Posture de départ · L3 Premiers appuis · L4 diagnostic intermédiaire · L5 Maintien de la vitesse · L6 thème à choisir · L7 évaluation du projet. 6 sprints de 6 s et 6 lancers, 8 points max.',
       ex ? [{label:'Ouvrir', value:'open', cls:'primary'}, {label:'Régénérer', value:'new', cls:'orange'}] : [{label:'Créer', value:'new', cls:'primary'}]);
     if (!ch) return; if (ch === 'new') makeTestClass(); else useClass(ex.id); save(); toast('🧪 Classe Test'); render(); },
   compDetail: d => { UI.sid = d.sid; UI.profTab = 'compDetail'; render(); window.scrollTo(0,0); },
@@ -1937,7 +2071,7 @@ const A = {
     UI.draft[k] = clampT(d.a, (UI.draft[k] ?? g?.conseillee ?? Math.ceil(maxPlots(d.a)/2)) + (UI.draft[k] == null ? 0 : +d.d)); render(); },
   pjSave: () => { const D = UI.draft, sid = UI.sid;
     if (D.cibleS == null || D.cibleB == null) return toast('Choisis tes deux cibles');
-    S.projects[sid] = { cibleS: D.cibleS, cibleB: D.cibleB, formeJ: D.formeJ, motivJ: D.motivJ, texte: $('#pj-text').value.trim(), ts: now(), d: S.deviceId };
+    S.projects[sid] = { cibleS: D.cibleS, cibleB: D.cibleB, formeJ: D.formeJ, texte: $('#pj-text').value.trim(), ts: now(), d: S.deviceId };
     save(); toast('✓ Projet enregistré : ce sont tes cibles de l\'évaluation finale', 3500); go('projet'); },
   pickGroup: d => { UI.filter = d.g === 'all' ? 'all' : d.g ? +d.g : null; go('saisie'); },
   selClass: d => { useClass(d.id); UI.filter = null; save(); render(); },
@@ -2045,9 +2179,17 @@ document.addEventListener('change', e => {
     if (v === +S.settings[ACT[a].base]) delete L[ACT[a].att]; else L[ACT[a].att] = v; save(); render(); }
   if (f === 'set') { S.settings[t.dataset.k] = +t.value; save(); render(); }
   if (f === 'source') { lesson(t.dataset.n).source = /^\d+$/.test(t.value) ? +t.value : t.value; save(); render(); toast('✓ Cibles mises à jour'); }
-  if (f === 'kind') { const L = lesson(t.dataset.n); L.kind = t.value;
+  if (f === 'kind') { const L = lesson(t.dataset.n), v = t.value;
+    if (v.startsWith('th:')) { L.kind = 'theme'; L.th = snapTheme(themeById(v.slice(3))) || L.th; }
+    else { L.kind = v; if (v !== 'theme') delete L.th; else L.th = null; }
+    if (L.kind === 'theme') L.title = '';
     if (t.value === 'diag' || t.value === 'inter') L.source = 'none'; else if (t.value === 'finale') L.source = 'projet'; else if (['none','projet'].includes(L.source)) L.source = 'prev';
     save(); render(); }
+  if (f === 'thName' || f === 'thAct' || f === 'thCr') { const th = themeById(t.dataset.id); if (!th) return;
+    if (f === 'thName') th.n = t.value.trim() || 'Thème';
+    if (f === 'thAct') th.a = t.value === 'b' ? 'b' : 's';
+    if (f === 'thCr') { const cr = Array.from({length:MAX_CR}, (_, i) => th.cr[i] || ''); cr[+t.dataset.i] = t.value.trim(); th.cr = cr.filter(Boolean); }
+    refreshThemeSnapshots(th.id); save(); render(); return; }
   if (f === 'calc') { lesson(t.dataset.n).calc = t.value; save(); render(); }
 });
 
