@@ -10,7 +10,7 @@
    ===================================================================== */
 'use strict';
 
-const APP_VERSION = '7.0.0';
+const APP_VERSION = '7.0.1';
 const STORE_KEY = 'neps_biathlon5s_v2';
 const QR_CHUNK = 440;           // caractères base45 par QR (QR version 11 max : facile à lire par une caméra)
 
@@ -229,7 +229,7 @@ const isFinale = n => kindOf(n) === 'finale';
 function targetFromResults(x, sid, a, calc){
   const v = vals(perf(x, sid, a));
   if (!v.length) return null;
-  return clampT(a, calc === 'avg' ? avg(v) : Math.max(...v));
+  return clampT(a, Math.max(...v));
 }
 /* Cible de base (sans facile / difficile). Une cible reste la norme jusqu'au prochain changement :
    modification à la main, ou « utiliser les résultats de la leçon X ». */
@@ -892,11 +892,9 @@ function sourceSelect(n, label=''){
   if (kind === 'diag' || kind === 'inter') opts += o('none', 'Cibles à déterminer');
   if (lastKind('diag', n)) opts += o('diag', `Cibles de l'évaluation diagnostique (L${lastKind('diag', n)})`);
   if (lastKind('inter', n)) opts += o('inter', `Cibles du diagnostic intermédiaire (L${lastKind('inter', n)})`);
-  if (kind === 'finale') opts += o('projet', "Cibles de l'évaluation finale (projet de l'élève)");
+  if (kind === 'finale') opts += o('projet', "Projet de l'élève");
   opts += Array.from({length:n-1},(_,i)=>i+1).map(x => o(x, `Cibles = résultats de la leçon ${x} (${count(x)} él.)`)).join('');
-  const calc = sourceLesson(n) ? `<label><select data-field="calc" data-n="${n}">
-      <option value="max" ${L.calc!=='avg'?'selected':''}>Meilleur plot atteint</option>
-      <option value="avg" ${L.calc==='avg'?'selected':''}>Moyenne arrondie</option></select></label>` : '';
+  const calc = '';                                  // cible = meilleur plot atteint (identique pour toute la leçon)
   return `<div class="src-sel">${label?`<label class="field grow">${label}`:'<label class="grow">'}<select data-field="source" data-n="${n}">${opts}</select></label>${calc}</div>`;
 }
 function kindSelect(n){
