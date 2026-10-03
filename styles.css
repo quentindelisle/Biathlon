@@ -396,3 +396,25 @@ select[disabled]{opacity:.7}
 .body-svg .bz.on circle{fill:rgba(208,22,27,.85);stroke:#7a0b0e;stroke-dasharray:none}
 .body-svg .ouch{fill:#fff;font-weight:900;font-size:16px;pointer-events:none}
 .body-svg{overflow:visible;max-width:280px}
+
+/* Compétences D2 / D3 / D4 (mode 4321) */
+.cdot{display:inline-block;width:22px;height:22px;border-radius:50%;vertical-align:middle;border:2px solid rgba(0,0,0,.25)}
+.cdot.big{width:28px;height:28px}
+.cdot.sug{border:3px dashed}
+.cdot.none{background:#fff;border:2px dashed #9AA3B5}
+.comp-row{display:flex;gap:10px;font-weight:900;font-size:16px;flex-wrap:wrap}
+.comp-row>span{display:inline-flex;align-items:center;gap:4px}
+.comp-legend{font-size:15px;font-weight:700;margin-top:6px;line-height:1.7}
+.comp-pick{border-top:2px solid #E3E7F0;padding:10px 0}
+.comp-pick:first-of-type{border-top:0}
+.comp-h{font-size:18px}
+.comp-s{font-size:14px;font-style:italic;margin-top:2px}
+.comp-aid{font-size:15px;margin:6px 0;line-height:1.6}
+.comp-btns{display:flex;gap:8px;flex-wrap:wrap;align-items:center}
+.cbtn{min-height:52px;padding:8px 16px;border-radius:12px;border:3px solid var(--cc);background:#fff;color:#0A1633;font-weight:900;font-size:17px;cursor:pointer}
+.cbtn.on{background:var(--cc);color:var(--cf);box-shadow:0 0 0 3px #0A1633}
+.cbtn.reco{border-style:dashed}
+.d4-why{font-size:14px;font-weight:700}
+.d4-rule{margin-top:10px}
+.d4-rule summary{font-weight:900;cursor:pointer}
+.d4-rule p{font-size:14px}
