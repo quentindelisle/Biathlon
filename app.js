@@ -10,7 +10,7 @@
    ===================================================================== */
 'use strict';
 
-const APP_VERSION = '8.2.8';
+const APP_VERSION = '8.3.0';
 const STORE_KEY = 'neps_biathlon5s_v2';
 const QR_CHUNK = 440;           // caractères base45 par QR (QR version 11 max : facile à lire par une caméra)
 
@@ -223,7 +223,7 @@ const avg = a => a.length ? a.reduce((x,y)=>x+y,0)/a.length : null;
 const clampT = (a, v) => v == null ? null : Math.max(1, Math.min(maxPlots(a), Math.round(v)));
 const hasSource = n => typeof lesson(n).source === 'number' && lesson(n).source < n;
 /* Nature de la leçon */
-const KINDS = { manuel:'Remplissage manuel', diag:'Évaluation diagnostique', inter:'Bats Ta Performance !', finale:'Évaluation finale', theme:'Pilier' };
+const KINDS = { manuel:'Remplissage manuel', diag:'Évaluation diagnostique', inter:'💪 Bats Tes Perfs !!! 🚀', finale:'Évaluation finale', theme:'Pilier' };
 const KIND_IDX = ['manuel','diag','inter','finale','theme'];
 const kindOf = n => lesson(n).kind || 'manuel';
 const lessonTitle = n => kindOf(n) === 'manuel' ? (lesson(n).title || pilTitle(n)) : KINDS[kindOf(n)];
@@ -363,7 +363,7 @@ function render(){
   if (!ROOT.role) { setTop('Biathlon · CA1', 'Choix du rôle de la tablette'); m.innerHTML = viewRole(); return; }
   const prof = isProfRole();
   /* tablette élève : scanner la séance, saisir, projet (évaluation finale), envoyer */
-  if (!prof && !['home','saisie','entry','projet','projetDetail','send','receive'].includes(v)) v = UI.view = 'home';
+  if (!prof && !['home','saisie','entry','projet','projetDetail','send','receive','stats','statsDetail'].includes(v)) v = UI.view = 'home';
   /* tablette enseignant : tout passe par l'espace enseignant (code) */
   if (prof && !UI.profUnlocked && v !== 'home') v = UI.view = 'home';
   if (prof && UI.profUnlocked && v === 'home') { v = UI.view = 'prof'; UI.profTab = 'menu'; }
@@ -373,13 +373,13 @@ function render(){
   if (v === 'home') { setTop('Biathlon · CA1', prof ? 'Tablette enseignant' : 'Tablette élève'); m.innerHTML = prof ? viewHomeProfLocked() : viewHomeEleve(); }
   else if (v === 'saisie') { if (prof) UI.profTab = 'saisieP'; setTop('Saisie · Leçon ' + curLesson(), UI.filter ? groupName(UI.filter) : lessonTitle(curLesson()), prof ? menuBtn : homeBtn); m.innerHTML = head('jour') + viewSaisie(); }
   else if (v === 'entry') { setTop('Saisie · ' + nameOf(UI.sid), lessonLabel(curLesson()), `<button class="btn small" data-action="go" data-view="saisie">▦ Élèves</button>`); m.innerHTML = viewEntry(); bindEntry(); }
-  else if (v === 'stats') { UI.profTab = 'statsP'; setTop('Statistiques', 'Choisir un élève', menuBtn); m.innerHTML = head('bilans') + viewStatsTiles(); }
+  else if (v === 'stats') { if (prof) UI.profTab = 'statsP'; setTop('Statistiques', 'Choisir un élève', prof ? menuBtn : homeBtn); m.innerHTML = head('bilans') + viewStatsTiles(); }
   else if (v === 'projet') { if (prof) UI.profTab = 'projetP'; setTop('Projet de l\'élève', 'Évaluation finale', prof ? menuBtn : homeBtn); m.innerHTML = head('bilans') + viewProjetTiles(); }
   else if (v === 'projetDetail') { setTop('Projet · ' + nameOf(UI.sid), '', `<button class="btn small" data-action="go" data-view="projet">▦ Élèves</button>`); m.innerHTML = viewProjetDetail(); }
   else if (v === 'statsDetail') { setTop('Stats · ' + nameOf(UI.sid), '', `<button class="btn small" data-action="go" data-view="stats">▦ Élèves</button>`); m.innerHTML = viewStatsDetail(); }
   else if (v === 'prof') { setTop('Espace enseignant', lessonLabel(curLesson()), `<button class="btn small" data-action="toEleve" title="Passer en espace élève">🧒</button> <button class="btn small" data-action="lockProf">🔒 Verrouiller</button>`); m.innerHTML = viewProf(); afterProf(); }
   else if (v === 'send') { setTop('Envoyer mes saisies', 'QR code à scanner par l\'enseignant', homeBtn); m.innerHTML = viewSend(); afterSend(); }
-  else if (v === 'receive') { setTop('Scanner la séance', 'QR affiché par l\'enseignant', homeBtn); m.innerHTML = viewReceive(); afterReceive(); }
+  else if (v === 'receive') { setTop('Scanner la leçon', 'QR affiché par l\'enseignant', homeBtn); m.innerHTML = viewReceive(); afterReceive(); }
 }
 
 /* ---------------------------------------------------------------------
@@ -794,48 +794,105 @@ function painModal(){
 
 
 /* ---------- Classe « Test » : données inventées pour essayer l'appli (cycle de 7 leçons, leçon du jour : 3) ---------- */
-const TEST_V = 4;                                    // version du scénario de la Classe Test
-function makeTestClass(){
-  const R = (a, b) => a + Math.floor(Math.random() * (b - a + 1));
-  const pick = arr => arr[Math.floor(Math.random() * arr.length)];
-  const ROSTER = [['L','Estelle'],['L','Jean Baptiste'],['B','Damien'],['R','Mathieu'],['P','Julie'],['T','Rémy'],['R','Estelle'],['M','Davy'],['D','Benoit'],['P','Christophe'],
-    ['R','Grégory'],['M','Pierre'],['D','Yohann'],['L','Fabienne'],['B','Emilie'],['D','Anne Laure'],['G','Romain'],['D','Jovany'],['J','Emilie'],['G','Simon'],
-    ['L','Solène'],['R','Paul Vincent'],['L','Caroline'],['L','Thibault'],['M','Romain'],['A','Jean Philippe'],['G','Jérôme'],['C','Nicolas'],['G','Guillaume'],['P','Sophie'],
-    ['F','Nélia'],['B','Solène'],['S','Gwenaëlle'],['F','Thibaut'],['B','Yann'],['V','Murat'],['R','Yann'],['B','Sébastien'],['L','Mathias']];
-  const NB_GROUPS = 2;
-  const old = Object.values(ROOT.classes).find(c => c.settings.className === 'Classe Test');
-  const c = newClassState('Classe Test', old ? old.id : undefined);
+/* ---------- Classes de démonstration : « Formateurs » (leçon 4) et « Complet » (cycle de 12 leçons terminé) ---------- */
+const TEST_V = 5;                                    // version des scénarios de démonstration
+const DEMO_ROSTER = [['L','Estelle'],['L','Jean Baptiste'],['B','Damien'],['R','Mathieu'],['P','Julie'],['T','Rémy'],['R','Estelle'],['M','Davy'],['D','Benoit'],['P','Christophe'],
+  ['R','Grégory'],['M','Pierre'],['D','Yohann'],['L','Fabienne'],['B','Emilie'],['D','Anne Laure'],['G','Romain'],['D','Jovany'],['J','Emilie'],['G','Simon'],
+  ['L','Solène'],['R','Paul Vincent'],['L','Caroline'],['L','Thibault'],['M','Romain'],['A','Jean Philippe'],['G','Jérôme'],['C','Nicolas'],['G','Guillaume'],['P','Sophie'],
+  ['F','Nélia'],['B','Solène'],['S','Gwenaëlle'],['F','Thibaut'],['B','Yann'],['V','Murat'],['R','Yann'],['B','Sébastien'],['L','Mathias']];
+const DEMO_COMPLET = [['MARTIN','Léa'],['BERNARD','Hugo'],['DUBOIS','Chloé'],['THOMAS','Lucas'],['ROBERT','Inès'],['RICHARD','Tom'],['PETIT','Jade'],['DURAND','Nathan'],['LEROY','Emma'],['MOREAU','Louis'],
+  ['SIMON','Manon'],['LAURENT','Adam'],['LEFEBVRE','Zoé'],['MICHEL','Gabriel'],['GARCIA','Lina'],['DAVID','Raphaël'],['BERTRAND','Camille'],['ROUX','Arthur'],['VINCENT','Rose'],['FOURNIER','Sacha']];
+const DEMO_RND = (a, b) => a + Math.floor(Math.random() * (b - a + 1));
+const DEMO_PICK = arr => arr[Math.floor(Math.random() * arr.length)];
+function demoClass(name, aliases, roster, nbLessons, current, plan){
+  const old = Object.values(ROOT.classes).find(c => [name, ...aliases].includes(c.settings.className));
+  const c = newClassState(name, old ? old.id : undefined);
   ROOT.classes[c.id] = c; useClass(c.id);
   const st = S.settings;
-  Object.assign(st, { nbLessons:7, baseCourses:6, baseTirs:6, timeS:6, plotsS:8, plotsB:8, firstS:15, firstB:4, stepB:2, nbGroups:NB_GROUPS, current:3 });
-  st.groupColors[0] = 'rouge'; st.groupColors[1] = 'bleu'; st.testV = TEST_V;             // groupe rouge · groupe bleu
-  ROSTER.forEach(([nom, prenom]) => S.students.push({ id:newStudentId(), nom, prenom, grp: 0 }));
-  S.students.forEach((s, i) => s.grp = (i % NB_GROUPS) + 1);   // 2 groupes fixés à l'avance (20 / 19), modifiables dans Groupes
-  /* L1 diag · L2-L3-L5 : un pilier sprint + un pilier lancer · L4 Bats Ta Performance ! · L6 piliers à choisir · L7 évaluation du projet */
-  const plan = { 1:['diag'], 2:['manuel','reag','posl'], 3:['manuel','drt','pous'], 4:['inter'], 5:['manuel','bras','angl'], 6:['manuel','?','?'], 7:['finale'] };
+  Object.assign(st, { nbLessons, baseCourses:6, baseTirs:6, timeS:6, plotsS:8, plotsB:8, firstS:15, firstB:4, stepB:2, nbGroups:2, current });
+  st.groupColors[0] = 'rouge'; st.groupColors[1] = 'bleu'; st.testV = TEST_V;            // groupe rouge · groupe bleu
+  roster.forEach(([nom, prenom]) => S.students.push({ id:newStudentId(), nom, prenom, grp: 0 }));
+  S.students.forEach((s, i) => s.grp = (i % 2) + 1);
   const snap = id => id === '?' ? '?' : id ? snapTheme(themeById(id) || DEFAULT_THEMES.find(t => t.id === id)) : null;
-  for (let n = 1; n <= 7; n++) { const L = lesson(n), [k, ps, pb] = plan[n]; L.kind = k === 'manuel' ? undefined : k; L.title = '';
-    L.pil = { s: snap(ps), b: snap(pb) };
-    L.source = n === 1 || n === 4 ? 'none' : n === 7 ? 'projet' : n < 4 ? 'diag' : 'inter'; }
-  const zones = ZONES.map(z => z.k);
-  S.students.forEach(s => {
-    const lvS = 2 + Math.random() * 3.5, lvB = 2 + Math.random() * 3.5, prog = .15 + Math.random() * .35, moral = R(4, 8), motr = 1.3 + Math.random() * 2.2, invest = 6.5 + Math.random() * 4.5;
-    for (let n = 1; n <= 2; n++) {                                  // L1 et L2 faites, tout le monde présent
-      const L = lesson(n);
-      const lv = (base) => Math.max(0, Math.min(8, Math.round(base + prog * (n - 1) + (Math.random() * 2.4 - 1.2))));
-      if (Math.random() < .08) { L.wb = L.wb || {}; L.wb[s.id] = { dl: [pick(zones)] }; }     // quelques douleurs signalées à l'appel
-      S.results[n] = S.results[n] || {};
-      const r = { c: Array.from({length:6}, () => lv(lvS)), b: Array.from({length:6}, () => lv(lvB)),
-        ts: now() - (3 - n) * 7 * 864e5, d: 'test' };
-      ['s','b'].forEach(a => { const th = lessonPil(n, a);
-        if (th) r[obKey(a)] = th.cr.map(() => Math.max(1, Math.min(4, Math.round(motr + n * .12 + Math.random() * 1.6 - .8)))); });
-      r.nc = Math.max(6, Math.min(11, Math.round(invest + Math.random() * 2 - 1)));
-      S.results[n][s.id] = r;
-    }
+  for (let n = 1; n <= nbLessons; n++) { const L = lesson(n), [k, ps, pb, src] = plan[n]; L.kind = k === 'manuel' ? undefined : k; L.title = '';
+    L.pil = { s: snap(ps), b: snap(pb) }; L.source = src; }
+  return c;
+}
+/* profil d'un élève inventé ; hi = performances plutôt hautes (5 à 8) */
+function demoProfile(hi){
+  return hi ? { lvS: 4.8 + Math.random() * 1.8, lvB: 4.6 + Math.random() * 2, prog: .1 + Math.random() * .25, motr: 1.8 + Math.random() * 2, invest: 7 + Math.random() * 4 }
+            : { lvS: 2.5 + Math.random() * 2.5, lvB: 2.5 + Math.random() * 2.5, prog: .05 + Math.random() * .17, motr: 1.4 + Math.random() * 2.2, invest: 6.5 + Math.random() * 4.5 };
+}
+function demoResult(n, sid, P, last){
+  const lv = base => Math.max(0, Math.min(8, Math.round(base + P.prog * (n - 1) + (Math.random() * 2.2 - 1.1))));
+  const r = { c: Array.from({length:6}, () => lv(P.lvS)), b: Array.from({length:6}, () => lv(P.lvB)), ts: now() - (last - n) * 7 * 864e5, d: 'test' };
+  ['s','b'].forEach(a => { const th = lessonPil(n, a);
+    if (th) r[obKey(a)] = th.cr.map(() => Math.max(1, Math.min(4, Math.round(P.motr + n * .1 + Math.random() * 1.6 - .8)))); });
+  r.nc = Math.max(6, Math.min(11, Math.round(P.invest + Math.random() * 2 - 1)));
+  S.results[n] = S.results[n] || {}; S.results[n][sid] = r;
+  if (Math.random() < .06) { const L = lesson(n); L.wb = L.wb || {}; L.wb[sid] = { dl: [DEMO_PICK(ZONES.map(z => z.k))] }; }
+}
+/* « Formateurs » : 39 élèves, 2 groupes, 7 leçons ; leçon du jour : L4 Bats Tes Perfs !!! (L1 à L3 saisies, aucun absent) */
+function makeFormateurs(){
+  demoClass('Formateurs', ['Classe Test'], DEMO_ROSTER, 7, 4, {
+    1:['diag',null,null,'none'], 2:['manuel','reag','posl','diag'], 3:['manuel','drt','pous','diag'], 4:['inter',null,null,'none'],
+    5:['manuel','bras','angl','inter'], 6:['manuel','?','?','inter'], 7:['finale',null,null,'projet'] });
+  S.students.forEach(s => { const P = demoProfile(true); for (let n = 1; n <= 3; n++) demoResult(n, s.id, P, 4); });
+  save();
+}
+/* « Complet » : 20 élèves, cycle de 12 leçons terminé, très peu d'absents / inaptes, projets du prudent au risqué */
+function makeComplet(){
+  demoClass('Complet', [], DEMO_COMPLET, 12, 12, {
+    1:['diag',null,null,'none'], 2:['manuel','reag','posl','diag'], 3:['manuel','drt','pous','diag'], 4:['inter',null,null,'none'],
+    5:['manuel','bras','angl','inter'], 6:['manuel','fin','posl','inter'], 7:['manuel','reag','pous','inter'], 8:['inter',null,null,'none'],
+    9:['manuel','drt','angl','inter'], 10:['manuel','bras','pous','inter'], 11:['manuel','fin','angl','inter'], 12:['finale',null,null,'projet'] });
+  const PROFILS = [['prudente','Je veux être sûr de réussir ma cible.'], ['conseillee','Je suis la cible conseillée, je pense pouvoir la tenir.'],
+    ['ambitieuse','Je vise haut, je me sens en progrès.'], ['risque','Je tente le tout pour le tout !']];
+  const prof = {};
+  S.students.forEach((s, i) => { const P = prof[s.id] = demoProfile(false);
+    for (let n = 1; n <= 11; n++) { const x = Math.random(), L = lesson(n);
+      if (x < .02) { L.att[s.id] = 'abs'; continue; }
+      if (x < .03) { L.att[s.id] = 'inap'; continue; }
+      demoResult(n, s.id, P, 12); } });
+  S.students.forEach((s, i) => {
+    const [kind, texte] = PROFILS[i % 4], tg = a => { const g = suggest(s.id, a); if (!g) return 4;
+      return kind === 'risque' ? clampT(a, g.ambitieuse + 1) : g[kind]; };
+    const P = prof[s.id], spe = P.lvS - P.lvB > 0.4 ? 's' : P.lvB - P.lvS > 0.4 ? 'b' : DEMO_PICK(['s','b']);
+    S.projects[s.id] = { cibleS: tg('s'), cibleB: tg('b'), spe, texte, ts: now() - 864e5, d: 'test' };
+    demoResult(12, s.id, P, 12);
   });
   save();
 }
 
+/* ---------------------------------------------------------------------
+   Évaluation finale : spécialité (spé) et note de performance /6 par épreuve
+   Spé : cible comparée à la 5e moins bonne performance · autre épreuve : à la 3e moins bonne.
+   Écart 0 (ou plus) → 6 · −0,5 → 5 · −1 → 4 · −1,5 → 3 · −2 → 2 · −2,5 → 1 · −3 et moins → 0
+   --------------------------------------------------------------------- */
+const speOf = sid => S.projects[sid]?.spe || null;
+function noteFinale(sid, a){
+  const F = finaleLesson(), v = vals(perf(F, sid, a)).sort((x, y) => x - y), t = targetInfo(F, sid, a).value;
+  if (!v.length || t == null || attOf(F, sid)) return null;
+  const k = speOf(sid) === a ? 5 : 3, x = v[Math.min(k, v.length) - 1], ec = x - t;
+  return { note: Math.max(0, Math.min(6, Math.floor((6 + 2 * ec) + 1e-9))), k, x, t, ec, spe: speOf(sid) === a };
+}
+function speBlock(sid, editable){
+  const sp = speOf(sid);
+  return `<div class="spe-box"><b>⭐ Ma spé :</b> ${['s','b'].map(a => editable
+      ? `<button class="btn spe-btn ${sp===a?'on':''}" data-action="speSet" data-a="${a}">${ACT[a].ico} ${a==='s'?'Sprint':'Lancer'}</button>`
+      : `<span class="spe-tag ${sp===a?'on':''}">${ACT[a].ico} ${a==='s'?'Sprint':'Lancer'}</span>`).join(' ')}
+    ${sp ? '' : '<span class="muted">à choisir</span>'}</div>`;
+}
+function notesBlock(sid){
+  const ns = ['s','b'].map(a => ({ a, r: noteFinale(sid, a) }));
+  if (!ns.some(x => x.r)) return '';
+  const tot = ns.every(x => x.r) ? ns[0].r.note + ns[1].r.note : null;
+  return `<div class="card strong"><h2>🏁 Note de performance · évaluation finale (L${finaleLesson()})</h2>
+    <div class="notes-grid">${ns.map(({ a, r }) => `<div class="note-box ${r && r.spe ? 'spe' : ''}"><div class="nb-h">${ACT[a].ico} ${a==='s'?'Sprint':'Lancer'}${r && r.spe ? ' · ⭐ spé' : ''}</div>
+      ${r ? `<div class="nb-v">${r.note}<small>/6</small></div><div class="nb-d">Cible ${pts(r.t)} · ${r.k}e moins bonne perf : ${pts(r.x)} · écart ${r.ec >= 0 ? '0' : fmt(r.ec)}</div>` : '<div class="muted">pas de résultat</div>'}</div>`).join('')}
+      ${tot != null ? `<div class="note-box tot"><div class="nb-h">Total</div><div class="nb-v">${tot}<small>/12</small></div></div>` : ''}</div>
+    ${speOf(sid) ? '' : '<div class="advice">Spé non choisie : la 3e moins bonne performance est prise pour les deux épreuves.</div>'}</div>`;
+}
 const finaleLesson = () => { for (let k = 1; k <= S.settings.nbLessons; k++) if (isFinale(k)) return k; return S.settings.nbLessons; };
 function suggest(sid, a){
   if (!isProfRole() && sumOf(sid)?.[a]) return sumOf(sid)[a];        // tablette élève : bilan complet reçu avec la séance
@@ -855,7 +912,7 @@ function viewProjetTiles(){
   return `${filterBar()}<div class="tiles">${sortedStudents().filter(passFilter).map(s => { const P = S.projects[s.id];
     return `<button class="tile ${P && P.cibleS != null && P.cibleB != null ? 'done' : ''}" data-action="projetDetail" data-sid="${s.id}">${band(s.id)}
       ${P && P.cibleS != null ? '<span class="check">✓</span>' : ''}<span class="name">${esc(nameOf(s.id))}</span>
-      <span class="meta">${P && P.cibleS != null ? `🏃 ${pts(P.cibleS)} · 🏀 ${pts(P.cibleB)}` : 'Projet à faire'}</span></button>`; }).join('')}</div>`;
+      <span class="meta">${P && P.cibleS != null ? `🏃 ${pts(P.cibleS)} · 🏀 ${pts(P.cibleB)}` : 'Projet à faire'}${P?.spe ? ` · ⭐ ${ACT[P.spe].ico}` : ''}${(ns => ns[0] || ns[1] ? ` · Note ${ns[0] ? ns[0].note : '—'}+${ns[1] ? ns[1].note : '—'}/12` : '')(['s','b'].map(a => noteFinale(s.id, a)))}</span></button>`; }).join('')}</div>`;
 }
 function viewProjetDetail(){
   const sid = UI.sid, s = student(sid); if (!s) return '';
@@ -892,6 +949,8 @@ function viewProjetDetail(){
     ${obsBilan(sid) ? `<div class="card strong compact"><h2>👀 Mes critères observés</h2>${obsBilan(sid)}</div>` : ''}
     <div class="card strong compact"><h2>🔎 En résumé</h2>
       <div><b>🏃 Sprint</b> ${sum('s')}</div><div style="margin-top:6px"><b>🏀 Tir</b> ${sum('b')}</div></div>
+    ${notesBlock(sid)}
+    <div class="card strong compact">${speBlock(sid, true)}</div>
     <div class="card strong compact">${painToday.length ? `<div class="advice">🩹 Douleur signalée aujourd'hui (${esc(painToday.map(zoneName).join(', '))}) : la cible <b>prudente</b> est conseillée.</div>` : ''}<div class="pj-choices">${choose('s')}${choose('b')}</div>
       <label class="field" style="margin-top:10px">Mon projet<textarea id="pj-text" style="min-height:70px">${esc(P.texte||'')}</textarea></label>
       <div class="btn-row" style="margin-top:10px"><button class="btn green" data-action="pjSave">💾 Valider mon projet</button>
@@ -945,36 +1004,18 @@ function viewStatsDetail(){
   const sid = UI.sid, s = student(sid); if (!s) return '';
   const N = S.settings.nbLessons, col = groupColor(grpOf(s.id)), cur = curLesson();
   const P = S.projects[sid] || {};
-  const projRow = a => {
-    const A_ = ACT[a], locked = lesson(N)[A_.man][sid] != null, lastTi = targetInfo(N, sid, a);
-    const sug = P[A_.proj] ?? targetInfo(N-1, sid, a).value;
-    let list = `<div class="tg-list">`;
-    for (let n = 1; n < N; n++) { const ti = targetInfo(n, sid, a); list += `<span class="it">L${n} : ${ti.value!=null?pts(ti.value):'—'}${ti.sign<0?' (F)':ti.sign>0?' (D)':''}</span>`; }
-    list += `</div>`;
-    return `<h3 style="margin-top:12px">${A_.ico} ${A_.label}</h3>${list}
-      ${locked ? `<div class="advice info">L'enseignant a fixé ta cible : <b>${plotTxt(a, lastTi.value)}</b>.</div>` :
-      `<div class="row" style="margin:6px 0"><b style="font-size:19px">Ma cible :</b>
-        <div class="stepper"><button data-action="projStep" data-a="${a}" data-d="-1">−</button>
-        <span class="val proj-val" id="proj-${a}" data-v="${sug ?? ''}" style="min-width:190px">${sug!=null?plotShort(a, sug):'—'}</span>
-        <button data-action="projStep" data-a="${a}" data-d="1">+</button></div></div>`}`;
-  };
   return `<div class="entry-head">${col?`<span class="band" style="background:${col.c}"></span>`:''}<div class="who">${esc(nameOf(sid))}</div>
       <div class="tgt"><div class="tgt-box"><div class="muted" style="font-weight:800">🏃 CIBLE L${cur}</div><div class="v">${plotShort('s', targetInfo(cur, sid, 's').value)}</div></div>
       <div class="tgt-box"><div class="muted" style="font-weight:800">🏀 CIBLE L${cur}</div><div class="v">${plotShort('b', targetInfo(cur, sid, 'b').value)}</div></div></div></div>
     <div class="btn-row" style="margin-bottom:12px"><button class="btn" data-action="go" data-view="stats">← Retour aux élèves</button></div>
+    ${frStrip(sid)}
+    <div class="card strong compact">${speBlock(sid, true)}${P.cibleS != null ? `<div style="margin-top:6px;font-weight:800">🎯 Mon projet : 🏃 ${pts(P.cibleS)} · 🏀 ${pts(P.cibleB)}${P.texte ? ` · « ${esc(P.texte)} »` : ''}</div>` : ''}</div>
+    ${notesBlock(sid)}
     <div class="card strong"><h2>💡 Conseils</h2>${advices(sid).map(a=>`<div class="advice ${a.cls}">${a.t}</div>`).join('')}</div>
     <div class="card"><b>Couleurs : écart entre tes points et ta cible</b>${legend()}</div>
     <div class="stats-cols">${statsColumn(sid, 's')}${statsColumn(sid, 'b')}</div>
     ${obsBilan(sid) ? `<div class="card strong"><h2>👀 Mes critères observés</h2>${obsBilan(sid)}</div>` : ''}
-    ${wellSuivi(sid)}
-    <div class="card strong" id="projet"><h2>📝 Mon projet pour la dernière leçon (leçon ${N})</h2>
-      
-      ${projRow('s')}${projRow('b')}
-      <label class="field" style="margin-top:12px">Mon projet
-        <textarea id="proj-text" >${esc(P.texte||'')}</textarea></label>
-      <div class="btn-row" style="margin-top:10px"><button class="btn green" data-action="projSave">💾 Enregistrer mon projet</button>
-        ${P.ts?`<span class="muted">Enregistré le ${new Date(P.ts).toLocaleDateString('fr-FR')}</span>`:''}</div>
-    </div>`;
+    ${wellSuivi(sid)}`;
 }
 
 /* ---------------------------------------------------------------------
@@ -1119,7 +1160,7 @@ function viewRole(){
     <div class="home-lesson"><div class="big">Cette tablette est…</div></div>
     <div class="home-grid two">
       <button class="home-btn prof" data-action="setRole" data-r="prof"><span class="ico">👩‍🏫</span>Tablette enseignant<small>Préparer · QR de séance · récupérer · bilans</small></button>
-      <button class="home-btn saisie" data-action="setRole" data-r="eleve"><span class="ico">🧒</span>Tablette élève<small>Scanner la séance · saisir · envoyer</small></button>
+      <button class="home-btn saisie" data-action="setRole" data-r="eleve"><span class="ico">🧒</span>Tablette élève<small>Scanner la leçon · saisir · statistiques · envoyer</small></button>
     </div>
     <p class="muted center" style="font-weight:700">Les données déjà présentes sur la tablette sont conservées.</p></div>`;
 }
@@ -1132,13 +1173,14 @@ function viewHomeEleve(){
       <div class="home-lesson"><div class="big">Leçon ${n} / ${S.settings.nbLessons}</div>
         <div style="font-size:20px;font-weight:800">${esc(lessonTitle(n) || 'Sans titre')}</div>
         <div class="muted" style="font-weight:700">🏃 ${nbAtt(n,'s')} sprint(s) de ${fmt(S.settings.timeS)} s · 🏀 ${nbAtt(n,'b')} tir(s) · ${pres}/${S.students.length} présent(s)</div>
-        <div class="muted" style="font-size:14px">Séance scannée le ${new Date(ROOT.seance.at).toLocaleDateString('fr-FR')} à ${new Date(ROOT.seance.at).toLocaleTimeString('fr-FR',{hour:'2-digit',minute:'2-digit'})}</div></div>`
-      : `<div class="home-lesson"><div class="big">Aucune séance</div><div style="font-weight:800">Scanne le QR de la séance affiché par ton enseignant.</div></div>`}
-    <div class="home-grid steps">
-      <button class="home-btn scan" data-action="go" data-view="receive"><span class="ico">📷</span>1. Scanner la séance</button>
-      <button class="home-btn saisie" data-action="goSaisie" ${has ? '' : 'disabled'}><span class="ico">✍️</span>2. Saisir</button>
-      ${has && isFinale(n) ? `<button class="home-btn stats" data-action="go" data-view="projet"><span class="ico">🎯</span>Mon projet</button>` : ''}
-      <button class="home-btn send" data-action="go" data-view="send" ${has ? '' : 'disabled'}><span class="ico">📤</span>3. Envoyer mes saisies</button>
+        <div class="muted" style="font-size:14px">Leçon scannée le ${new Date(ROOT.seance.at).toLocaleDateString('fr-FR')} à ${new Date(ROOT.seance.at).toLocaleTimeString('fr-FR',{hour:'2-digit',minute:'2-digit'})}</div></div>`
+      : `<div class="home-lesson"><div class="big">Aucune leçon</div><div style="font-weight:800">Scanne le QR de la leçon affiché par ton enseignant.</div></div>`}
+    <div class="home-grid row4">
+      <button class="home-btn scan" data-action="go" data-view="receive"><span class="ico">📷</span>Scanner la leçon</button>
+      <button class="home-btn saisie" data-action="goSaisie" ${has ? '' : 'disabled'}><span class="ico">✍️</span>Saisir</button>
+      <button class="home-btn stats" data-action="go" data-view="stats" ${has ? '' : 'disabled'}><span class="ico">📊</span>Statistiques</button>
+      ${has && isFinale(n) ? `<button class="home-btn proj" data-action="go" data-view="projet"><span class="ico">🎯</span>Mon projet</button>` : ''}
+      <button class="home-btn send" data-action="go" data-view="send" ${has ? '' : 'disabled'}><span class="ico">📤</span>Envoyer mes saisies</button>
     </div></div>`;
 }
 function viewHomeProfLocked(){
@@ -1151,7 +1193,7 @@ function viewHomeProfLocked(){
 /* Espace enseignant : 4 étapes */
 const PSECT = {
   prep:   { ico:'🛠', t:'Préparer le cycle', tabs:[['classes','👥 Classe & élèves'],['groupes','🎽 Groupes'],['cycle','⚙️ Paramètres du cycle'],['themes','🏛 Piliers']] },
-  jour:   { ico:'📅', t:'Leçon du jour', tabs:[['appel','✅ Appel'],['lgroupes','🎽 Groupes du jour'],['cibles','🎯 Cibles'],['qr','📲 QR de la séance'],['saisieP','✍️ Saisie (dépannage)']] },
+  jour:   { ico:'📅', t:'Leçon du jour', tabs:[['appel','✅ Appel'],['lgroupes','🎽 Groupes du jour'],['cibles','🎯 Cibles'],['qr','📲 QR de la leçon'],['saisieP','✍️ Saisie (dépannage)']] },
   recup:  { ico:'📥', t:'Récupérer les saisies', tabs:[] },
   bilans: { ico:'📊', t:'Bilans', tabs:[['statsP','📊 Statistiques'],['projetP','🎯 Projets'],['comp','🎓 Compétences'],['export','📁 Export & sauvegarde']] } };
 const PREDIR = { saisieP:'saisie', statsP:'stats', projetP:'projet' };
@@ -1190,17 +1232,17 @@ function profMenu(){
   return `<div class="card strong compact center"><b style="font-size:20px">🏫 ${esc(className())}</b> · Leçon ${n}/${S.settings.nbLessons} ${esc(lessonTitle(n) ? '· ' + lessonTitle(n) : '')} · ${pres}/${S.students.length} présent(s) · ${got} saisie(s) reçue(s)</div>
     <div class="pmenu steps">
       <button class="pm-btn" data-action="profTab" data-tab="classes"><span class="step">1</span><span class="ico">🛠</span>Préparer le cycle<small>Classes · élèves · groupes · paramètres · piliers</small></button>
-      <button class="pm-btn" data-action="profTab" data-tab="appel"><span class="step">2</span><span class="ico">📅</span>Leçon du jour<small>Appel · groupes · cibles · 📲 QR de la séance</small></button>
+      <button class="pm-btn" data-action="profTab" data-tab="appel"><span class="step">2</span><span class="ico">📅</span>Leçon du jour<small>Appel · groupes · cibles · 📲 QR de la leçon</small></button>
       <button class="pm-btn" data-action="profTab" data-tab="recup"><span class="step">3</span><span class="ico">📥</span>Récupérer les saisies<small>Scanner les QR des tablettes élèves</small></button>
       <button class="pm-btn" data-action="profTab" data-tab="statsP"><span class="step">4</span><span class="ico">📊</span>Bilans<small>Statistiques · projets · compétences · export</small></button>
     </div>
-    <div class="btn-row" style="justify-content:center;margin-top:12px"><button class="btn small" data-action="testClass">🧪 Classe Test</button></div>`;
+    <div class="btn-row" style="justify-content:center;margin-top:12px"><button class="btn small" data-action="testClass">🧪 Classes de démonstration</button></div>`;
 }
 function profSeanceQR(){
   const n = curLesson(), abs = S.students.filter(s => attOf(n, s.id)).length;
-  return `<div class="card strong"><h2>📲 QR de la séance · Leçon ${n}</h2>
+  return `<div class="card strong"><h2>📲 QR de la leçon · Leçon ${n}</h2>
       <div class="muted" style="font-weight:700">${esc(lessonTitle(n) || 'Sans titre')} · ${S.students.length} élève(s) · ${abs} absent(s)/inapte(s) · ${nbGroups()} groupe(s)${isFinale(n) ? ' · avec le bilan de chaque élève pour son projet' : ''}</div>
-      <div class="advice info">Sur chaque tablette élève : <b>📷 1. Scanner la séance</b>. Faites l'appel et vérifiez les cibles <b>avant</b> d'afficher ce QR.</div>
+      <div class="advice info">Sur chaque tablette élève : <b>📷 Scanner la leçon</b>. Faites l'appel et vérifiez les cibles <b>avant</b> d'afficher ce QR.</div>
       <div id="qr-seance" class="center">Préparation…</div></div>`;
 }
 /* Élèves dont on attend encore des résultats pour la leçon du jour (🏃 et/ou 🏀 manquant) */
@@ -1215,7 +1257,7 @@ function waitList(){
 function profRecup(){
   const n = curLesson();
   return `<div class="recup-grid"><div class="card strong"><h2>📥 Scanner les tablettes élèves</h2>
-      <div class="muted" style="font-weight:700">Sur chaque tablette élève : <b>📤 3. Envoyer mes saisies</b>, puis scannez le QR ici (leçon ${n}).</div>
+      <div class="muted" style="font-weight:700">Sur chaque tablette élève : <b>📤 Envoyer mes saisies</b>, puis scannez le QR ici (leçon ${n}).</div>
       <div id="scan-area"></div>
       <div class="btn-row" style="justify-content:center;margin-top:12px"><button class="btn primary" data-action="profTab" data-tab="recup">↻ Actualiser</button>
         <label class="btn">📂 Importer un fichier (.json)<input type="file" id="file-sync" accept=".json,application/json" hidden></label></div></div>
@@ -1231,7 +1273,7 @@ function profTransfert(){
 function afterProf(){
   if (UI.profTab === 'groupes' || UI.profTab === 'lgroupes') bindGroups();
   if (UI.profTab === 'qr') (async () => { const area = $('#qr-seance'); const payload = await encodeBin(binSeance(curLesson()));
-    if (area && UI.profTab === 'qr' && UI.view === 'prof') showQRSeries(chunkQR(payload, 'S', QR_CHUNK), area, `Séance · ${esc(className())} · leçon ${curLesson()}`); })();
+    if (area && UI.profTab === 'qr' && UI.view === 'prof') showQRSeries(chunkQR(payload, 'S', QR_CHUNK), area, `Leçon ${curLesson()} · ${esc(className())}`); })();
   if (UI.profTab === 'recup') startScan($('#scan-area'), ['R','F'], async p => { await applyPacket(p); const w = $('#wait-box'); if (w) w.innerHTML = waitList(); return 'continue'; });
 }
 function profClasses(){
@@ -1316,7 +1358,7 @@ function sourceSelect(n, label=''){
   let opts = o('prev', n === 1 ? 'Choix manuel des cibles' : `Garder les cibles de la leçon ${n-1}`);
   if (kind === 'diag' || kind === 'inter') opts += o('none', 'Cibles à déterminer');
   if (lastKind('diag', n)) opts += o('diag', `Cibles de l'évaluation diagnostique (L${lastKind('diag', n)})`);
-  if (lastKind('inter', n)) opts += o('inter', `Cibles de « Bats Ta Performance ! » (L${lastKind('inter', n)})`);
+  if (lastKind('inter', n)) opts += o('inter', `Cibles de « Bats Tes Perfs !!! » (L${lastKind('inter', n)})`);
   if (kind === 'finale') opts += o('projet', "Projet de l'élève");
   opts += Array.from({length:n-1},(_,i)=>i+1).map(x => o(x, `Cibles = résultats de la leçon ${x} (${count(x)} él.)`)).join('');
   const calc = '';                                  // cible = meilleur plot atteint (identique pour toute la leçon)
@@ -1532,7 +1574,7 @@ function exportXlsx(){
   const r2 = v => v == null ? '' : Math.round(v*100)/100;
   const head = ['Nom', 'Prénom', 'Affiché', 'Groupe'];
   for (let n = 1; n <= N; n++) head.push(`L${n} sprint cible`, `L${n} sprint moy.`, `L${n} basket cible`, `L${n} basket moy.`);
-  head.push('Projet : cible sprint', 'Projet : cible basket', 'Projet : texte', 'Fil rouge proposé', 'Fil rouge final');
+  head.push('Projet : cible sprint', 'Projet : cible basket', 'Projet : texte', 'Spé', 'Note sprint /6', 'Note lancer /6', 'Total /12', 'Fil rouge proposé', 'Fil rouge final');
   const syn = [head];
   let maxA = 0; for (let n = 1; n <= N; n++) maxA = Math.max(maxA, nbAtt(n,'s'), nbAtt(n,'b'));
   const det = [['Nom','Prénom','Leçon','Titre','Statut','Épreuve','Cible (points)','Cible (plot)',
@@ -1547,7 +1589,8 @@ function exportXlsx(){
     }
     const P = S.projects[s.id] || {};
     const sg = frSuggest(s.id), fin = compOf(s.id).FR;
-    row.push(num(P.cibleS), num(P.cibleB), P.texte || '', sg ? COMP_LV[sg].n : '', fin ? COMP_LV[fin].n : '');
+    const nS = noteFinale(s.id, 's'), nB = noteFinale(s.id, 'b');
+    row.push(num(P.cibleS), num(P.cibleB), P.texte || '', P.spe === 's' ? 'Sprint' : P.spe === 'b' ? 'Lancer' : '', nS ? nS.note : '', nB ? nB.note : '', nS && nB ? nS.note + nB.note : '', sg ? COMP_LV[sg].n : '', fin ? COMP_LV[fin].n : '');
     syn.push(row);
     for (let n = 1; n <= N; n++) {
       const at = attOf(n, s.id);
@@ -1645,7 +1688,7 @@ function mergeInto(c, results, projects){ const prev = S.id; useClass(c.id); con
 async function applyPacket(p){
   if (!p || !p.k) throw new Error('Données non reconnues');
   if (p.k === 'seance') {
-    if (isProfRole()) throw new Error('QR de séance : à scanner sur les tablettes élèves');
+    if (isProfRole()) throw new Error('QR de la leçon : à scanner sur les tablettes élèves');
     return applySeance(p);
   }
   if (p.k === 'res') {
@@ -1749,7 +1792,7 @@ function sumRead(r){
 }
 function binSeance(n){
   const cur = n || curLesson(), N = binNames(), L = binLesson(cur), list = sortedStudents(), withSum = isFinale(cur);
-  const w = BW(); w.u8('S'.charCodeAt(0)); w.u8(2);
+  const w = BW(); w.u8('S'.charCodeAt(0)); w.u8(3);
   w.u16(N.length); N.forEach(x => w.u8(x)); w.u16(L.length); L.forEach(x => w.u8(x));
   w.u8(withSum ? 1 : 0);
   if (withSum) list.forEach(s => sumBytes(w, s.id));
@@ -1770,6 +1813,8 @@ function binSeance(n){
     });
   }
   w.u8(1); list.forEach(s => w.u32(zoneMask(dlOf(cur, s.id))));      // douleurs signalées à l'appel du jour
+  list.forEach(s => { const P = S.projects[s.id];                       // v3 : projets (cibles + spé) connus du prof
+    w.u8(P ? 1 : 0); if (P) { w.u8(nv(P.cibleS)); w.u8(nv(P.cibleB)); w.u8(P.spe === 's' ? 1 : P.spe === 'b' ? 2 : 0); w.str(P.texte || '', 200); } });
   return w.bytes();
 }
 function seanceDecode(u, r, ver){
@@ -1795,7 +1840,9 @@ function seanceDecode(u, r, ver){
   }
   let painsNow = null;
   if (ver >= 2 && !r.end() && r.u8()) painsNow = names.students.map(() => maskZones(r.u32()));
-  return { k:'seance', names, lesson: les, sums, hist, painsNow };
+  let projs = null;
+  if (ver >= 3 && !r.end()) projs = names.students.map(() => r.u8() ? { cibleS: vn(r.u8()), cibleB: vn(r.u8()), spe: [null,'s','b'][r.u8()] || null, texte: r.str() } : null);
+  return { k:'seance', names, lesson: les, sums, hist, painsNow, projs };
 }
 async function applySeance(p){
   const c = targetClass(p.names.cid, p.names.className, true);
@@ -1823,8 +1870,10 @@ async function applySeance(p){
       } });
   });
   if (p.painsNow) { const Lc = lesson(p.lesson.settings.current); Lc.wb = {}; S.students.forEach((s, i) => { if (p.painsNow[i]?.length) Lc.wb[s.id] = { dl: p.painsNow[i] }; }); }
+  if (p.projs) S.students.forEach((s, i) => { const P = p.projs[i], loc = S.projects[s.id];
+    if (P && !(loc && loc.d === S.deviceId)) S.projects[s.id] = { ...P, ts: 1, d: 'prof' }; });   // projet saisi sur cette tablette : prioritaire
   ROOT.seance = { cid: S.id, n: p.lesson.settings.current, at: now() };
-  save(); toast(`✓ Séance reçue : ${className()} · leçon ${p.lesson.settings.current}`, 3500);
+  save(); toast(`✓ Leçon reçue : ${className()} · leçon ${p.lesson.settings.current}`, 3500);
   UI.filter = null; go('home');
   return 'done';
 }
@@ -1862,7 +1911,7 @@ function binLesson(n){
   return w.bytes();
 }
 function binResults(){
-  const w = BW(); w.u8('R'.charCodeAt(0)); w.u8(5); w.id(S.deviceId); w.id(S.id);
+  const w = BW(); w.u8('R'.charCodeAt(0)); w.u8(6); w.id(S.deviceId); w.id(S.id);
   const ents = [], projs = [];
   Object.entries(S.results).forEach(([n, byS]) => Object.entries(byS).forEach(([sid, r]) => { if (r.d === S.deviceId) ents.push([+n, sid, r]); }));
   Object.entries(S.projects).forEach(([sid, p]) => { if (p.d === S.deviceId) projs.push([sid, p]); });
@@ -1873,7 +1922,7 @@ function binResults(){
     const ob = r.ob || []; w.u8(ob.length); ob.forEach(v => w.u8(nv(v))); w.u8(nv(r.nc));
     const obB = r.obB || []; w.u8(obB.length); obB.forEach(v => w.u8(nv(v))); });
   w.u8(projs.length);
-  projs.forEach(([sid, p]) => { w.id(sid); w.u8(nv(p.cibleS)); w.u8(nv(p.cibleB)); w.u32(Math.floor((p.ts||0)/1000)); w.str(p.texte||'', 600); w.u8(nv(p.formeJ)); w.u8(nv(p.motivJ)); });
+  projs.forEach(([sid, p]) => { w.id(sid); w.u8(nv(p.cibleS)); w.u8(nv(p.cibleB)); w.u32(Math.floor((p.ts||0)/1000)); w.str(p.texte||'', 600); w.u8(nv(p.formeJ)); w.u8(nv(p.motivJ)); w.u8(p.spe === 's' ? 1 : p.spe === 'b' ? 2 : 0); });
   return { bytes: w.bytes(), count: ents.length + projs.length };
 }
 function binDecode(u){
@@ -1921,7 +1970,8 @@ function binDecode(u){
     const np = r.u8();
     for (let i = 0; i < np; i++) { const sid = r.id(), cS = vn(r.u8()), cB = vn(r.u8()), ts = r.u32()*1000, texte = r.str(true);
       projects[sid] = { cibleS:cS, cibleB:cB, texte, ts, d: from };
-      if (ver >= 3) { projects[sid].formeJ = vn(r.u8()); projects[sid].motivJ = vn(r.u8()); } }
+      if (ver >= 3) { projects[sid].formeJ = vn(r.u8()); projects[sid].motivJ = vn(r.u8()); }
+      if (ver >= 6) projects[sid].spe = [null,'s','b'][r.u8()] || null; }
     return { k:'res', from, cid, results, projects };
   }
   throw new Error('QR inconnu');
@@ -1941,14 +1991,14 @@ function packRP(results, projects){
   const R = {}, P = {};
   Object.entries(results||{}).forEach(([n, byS]) => { R[n] = {}; Object.entries(byS||{}).forEach(([sid, r]) => {
     R[n][sid] = [r.c||[], r.b||[], Math.floor((r.ts||0)/1000) - T, di(r.d), r.fb ?? null, r.fa ?? null, r.mo ?? null, r.dl || [], r.ob || null, r.nc ?? null, r.obB || null]; }); });
-  Object.entries(projects||{}).forEach(([sid, p]) => { P[sid] = [p.cibleS ?? null, p.cibleB ?? null, p.texte||'', Math.floor((p.ts||0)/1000) - T, di(p.d), p.formeJ ?? null, p.motivJ ?? null]; });
+  Object.entries(projects||{}).forEach(([sid, p]) => { P[sid] = [p.cibleS ?? null, p.cibleB ?? null, p.texte||'', Math.floor((p.ts||0)/1000) - T, di(p.d), p.formeJ ?? null, p.motivJ ?? null, p.spe || null]; });
   return { T, D, R, P };
 }
 function unpackRP(z){
   const results = {}, projects = {};
   Object.entries(z.R||{}).forEach(([n, byS]) => { results[n] = {}; Object.entries(byS).forEach(([sid, a]) => {
     results[n][sid] = { c:a[0], b:a[1], ts:(z.T + a[2])*1000, d:z.D[a[3]], fb:a[4] ?? null, fa:a[5] ?? null, mo:a[6] ?? null, dl:a[7] || [], ...(a[8] ? { ob:a[8] } : {}), ...(a[9] != null ? { nc:a[9] } : {}), ...(a[10] ? { obB:a[10] } : {}) }; }); });
-  Object.entries(z.P||{}).forEach(([sid, a]) => { projects[sid] = { cibleS:a[0], cibleB:a[1], texte:a[2], ts:(z.T + a[3])*1000, d:z.D[a[4]], formeJ:a[5] ?? null, motivJ:a[6] ?? null }; });
+  Object.entries(z.P||{}).forEach(([sid, a]) => { projects[sid] = { cibleS:a[0], cibleB:a[1], texte:a[2], ts:(z.T + a[3])*1000, d:z.D[a[4]], formeJ:a[5] ?? null, motivJ:a[6] ?? null, spe:a[7] || null }; });
   return { results, projects };
 }
 function packPacket(p){
@@ -2161,7 +2211,7 @@ async function startScan(container, expectType, onDone){
       const pt = parsePart(txt);
       if (!pt) { msg.textContent = 'QR non reconnu (ce n\'est pas un QR de l\'appli Biathlon).'; continue; }
       const okTypes = [].concat(expectType || []);
-      if (okTypes.length && !okTypes.includes(pt.type)) { msg.textContent = okTypes.includes('R') ? 'Ce QR est destiné aux tablettes élèves (📷 Scanner la séance).' : 'Ce QR est destiné à la tablette enseignant (📥 Récupérer les saisies).'; continue; }
+      if (okTypes.length && !okTypes.includes(pt.type)) { msg.textContent = okTypes.includes('R') ? 'Ce QR est destiné aux tablettes élèves (📷 Scanner la leçce).' : 'Ce QR est destiné à la tablette enseignant (📥 Récupérer les saisies).'; continue; }
       if (pt.id === me.doneId) continue;            // QR déjà traité (encore devant la caméra)
       if (me.id !== pt.id) { me.id = pt.id; me.parts = {}; me.n = pt.n; }
       if (!me.parts[pt.i]) { me.parts[pt.i] = pt.data; if (navigator.vibrate) navigator.vibrate(40); }
@@ -2274,7 +2324,7 @@ async function afterSend(){
   showQRSeries(chunkQR(payload, 'R', 260), area, '');
 }
 function viewReceive(){
-  return `<div class="card strong center"><b style="font-size:20px">📷 Scanne le QR de la séance affiché par l'enseignant</b></div>
+  return `<div class="card strong center"><b style="font-size:20px">📷 Scanne le QR de la leçon affiché par l'enseignant</b></div>
     <div id="scan-area"></div>
     <div class="btn-row" style="justify-content:center;margin-top:12px"><label class="btn">📂 Importer un fichier (.json)<input type="file" id="file-sync" accept=".json,application/json" hidden></label></div>`;
 }
@@ -2336,12 +2386,16 @@ const A = {
   thDel: async d => { const t = themeById(d.id); if (!t) return;
     if (!(await confirmBox('Supprimer « ' + esc(t.n) + ' » ?', 'Les leçons qui utilisent déjà ce pilier le gardent.', 'Supprimer', true))) return;
     ROOT.themes = themes().filter(x => x.id !== d.id); save(); render(); },
-  testClass: async () => { const ex = Object.values(ROOT.classes).find(c => c.settings.className === 'Classe Test');
-    const ch = await choiceBox('🧪 Classe Test', '39 élèves en 2 groupes · 7 leçons, leçon du jour : 3 (L1 et L2 déjà saisies, aucun absent). L1 diagnostic · L2 Réagir vite / Position du lanceur · L3 Courir droit / Pousser vite et fort · L4 Bats Ta Performance ! · L5 Utilisation des bras / Angle d’envol · L6 piliers à choisir · L7 évaluation du projet. 6 sprints de 6 s et 6 lancers, 8 points max.',
-      ex ? [{label:'Ouvrir', value:'open', cls:'primary'}, {label:'Régénérer', value:'new', cls:'orange'}] : [{label:'Créer', value:'new', cls:'primary'}]);
+  testClass: async () => {
+    const F = Object.values(ROOT.classes).find(c => ['Formateurs','Classe Test'].includes(c.settings.className)), C = Object.values(ROOT.classes).find(c => c.settings.className === 'Complet');
+    const ch = await choiceBox('🧪 Classes de démonstration',
+      '<b>Formateurs</b> : 39 élèves (groupe rouge / groupe bleu), 7 leçons, leçon du jour : L4 💪 Bats Tes Perfs !!! 🚀 (L1 à L3 saisies).<br><b>Complet</b> : 20 élèves, cycle de 12 leçons terminé (projets, spé et notes de l\'évaluation finale).',
+      [...(F ? [{label:'Ouvrir Formateurs', value:'F', cls:'primary'}, {label:'Régénérer Formateurs', value:'Fn', cls:'orange'}] : [{label:'Créer Formateurs', value:'Fn', cls:'primary'}]),
+       ...(C ? [{label:'Ouvrir Complet', value:'C', cls:'primary'}, {label:'Régénérer Complet', value:'Cn', cls:'orange'}] : [{label:'Créer Complet', value:'Cn', cls:'primary'}])]);
     if (!ch) return;
-    if (ch === 'new' || (ex && ex.settings.testV !== TEST_V)) makeTestClass(); else useClass(ex.id);   // ancienne Classe Test : remplacée par le scénario actuel
-    save(); toast('🧪 Classe Test'); render(); },
+    if (ch === 'Fn' || (ch === 'F' && F.settings.testV !== TEST_V)) makeFormateurs(); else if (ch === 'F') useClass(F.id);
+    if (ch === 'Cn' || (ch === 'C' && C.settings.testV !== TEST_V)) makeComplet(); else if (ch === 'C') useClass(C.id);
+    save(); toast('🧪 ' + className()); render(); },
   compDetail: d => { UI.sid = d.sid; UI.profTab = 'compDetail'; render(); window.scrollTo(0,0); },
   compSet: d => { S.comp = S.comp || {}; const c = S.comp[UI.sid] = S.comp[UI.sid] || {}, v = +d.v;
     if (!v || c[d.k] === v) delete c[d.k]; else c[d.k] = v; c.ts = now(); save(); render(); },
@@ -2350,9 +2404,10 @@ const A = {
   pjSet: d => { UI.draft[d.a === 's' ? 'cibleS' : 'cibleB'] = +d.v; render(); },
   pjStep: d => { const k = d.a === 's' ? 'cibleS' : 'cibleB'; const g = suggest(UI.sid, d.a);
     UI.draft[k] = clampT(d.a, (UI.draft[k] ?? g?.conseillee ?? Math.ceil(maxPlots(d.a)/2)) + (UI.draft[k] == null ? 0 : +d.d)); render(); },
+  speSet: d => { const sid = UI.sid, P = S.projects[sid] || {}; S.projects[sid] = { ...P, spe: P.spe === d.a ? null : d.a, ts: now(), d: S.deviceId }; save(); render(); flagSaved(); },
   pjSave: () => { const D = UI.draft, sid = UI.sid;
     if (D.cibleS == null || D.cibleB == null) return toast('Choisis tes deux cibles');
-    S.projects[sid] = { cibleS: D.cibleS, cibleB: D.cibleB, texte: $('#pj-text').value.trim(), ts: now(), d: S.deviceId };
+    S.projects[sid] = { cibleS: D.cibleS, cibleB: D.cibleB, spe: S.projects[sid]?.spe || null, texte: $('#pj-text').value.trim(), ts: now(), d: S.deviceId };
     save(); toast('✓ Projet enregistré : ce sont tes cibles de l\'évaluation finale', 3500); go('projet'); },
   pickGroup: d => { UI.filter = d.g === 'all' ? 'all' : d.g ? +d.g : null; go('saisie'); },
   selClass: d => { useClass(d.id); UI.filter = null; save(); render(); },

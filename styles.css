@@ -543,3 +543,22 @@ select[disabled]{opacity:.7}
 .wait-it .wi{font-size:22px;letter-spacing:4px}
 .tile.has-data{border-color:var(--green)}
 @media (max-width:900px){ .recup-grid{grid-template-columns:1fr} }
+
+/* v8.3 : accueil élève (4 boutons sur une ligne), spé, notes */
+.home-grid.row4{grid-template-columns:repeat(auto-fit,minmax(0,1fr));max-width:1100px}
+.home-grid.row4 .home-btn{min-height:130px;font-size:21px;padding:8px}
+.home-btn.proj{background:#8A2BE2}
+.spe-box{display:flex;flex-wrap:wrap;align-items:center;gap:8px;font-size:18px}
+.spe-btn{min-height:44px}
+.spe-btn.on{background:#FFD000;border-color:#9a7c00;color:#0A1633;box-shadow:0 0 0 3px #0A1633}
+.spe-tag{padding:4px 10px;border-radius:10px;border:2px solid var(--line);font-weight:900}
+.spe-tag.on{background:#FFD000;border-color:#9a7c00}
+.notes-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:10px}
+.note-box{border:3px solid var(--navy);border-radius:14px;padding:10px;text-align:center;background:#fff}
+.note-box.spe{border-color:#9a7c00;background:#FFF8D6}
+.note-box.tot{background:var(--navy);color:#fff}
+.nb-h{font-weight:900}
+.nb-v{font-size:44px;font-weight:900;line-height:1.1}
+.nb-v small{font-size:20px}
+.nb-d{font-size:13px;font-weight:700}
+@media (max-width:600px){ .home-grid.row4{grid-template-columns:1fr 1fr} .home-grid.row4 .home-btn{min-height:96px;font-size:17px;flex-direction:column} }
