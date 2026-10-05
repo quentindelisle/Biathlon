@@ -10,7 +10,7 @@
    ===================================================================== */
 'use strict';
 
-const APP_VERSION = '8.2.4';
+const APP_VERSION = '8.2.5';
 const STORE_KEY = 'neps_biathlon5s_v2';
 const QR_CHUNK = 440;           // caractères base45 par QR (QR version 11 max : facile à lire par une caméra)
 
@@ -793,7 +793,7 @@ function painModal(){
 }
 
 
-/* ---------- Classe « Test » : données inventées pour essayer l'appli (cycle de 7 leçons, leçon du jour : 6) ---------- */
+/* ---------- Classe « Test » : données inventées pour essayer l'appli (cycle de 7 leçons, leçon du jour : 3) ---------- */
 function makeTestClass(){
   const R = (a, b) => a + Math.floor(Math.random() * (b - a + 1));
   const pick = arr => arr[Math.floor(Math.random() * arr.length)];
@@ -806,7 +806,8 @@ function makeTestClass(){
   const c = newClassState('Classe Test', old ? old.id : undefined);
   ROOT.classes[c.id] = c; useClass(c.id);
   const st = S.settings;
-  Object.assign(st, { nbLessons:7, baseCourses:6, baseTirs:6, timeS:6, plotsS:8, plotsB:8, firstS:15, firstB:4, stepB:2, nbGroups:NB_GROUPS, current:6 });
+  Object.assign(st, { nbLessons:7, baseCourses:6, baseTirs:6, timeS:6, plotsS:8, plotsB:8, firstS:15, firstB:4, stepB:2, nbGroups:NB_GROUPS, current:3 });
+  st.groupColors[0] = 'rouge'; st.groupColors[1] = 'bleu';             // groupe rouge · groupe bleu
   ROSTER.forEach(([nom, prenom]) => S.students.push({ id:newStudentId(), nom, prenom, grp: 0 }));
   S.students.forEach((s, i) => s.grp = (i % NB_GROUPS) + 1);   // 2 groupes fixés à l'avance (20 / 19), modifiables dans Groupes
   /* L1 diag · L2-L3-L5 : un pilier sprint + un pilier lancer · L4 Bats Ta Performance ! · L6 piliers à choisir · L7 évaluation du projet */
@@ -818,10 +819,8 @@ function makeTestClass(){
   const zones = ZONES.map(z => z.k);
   S.students.forEach(s => {
     const lvS = 2 + Math.random() * 3.5, lvB = 2 + Math.random() * 3.5, prog = .15 + Math.random() * .35, moral = R(4, 8), motr = 1.3 + Math.random() * 2.2, invest = 6.5 + Math.random() * 4.5;
-    for (let n = 1; n <= 5; n++) {
-      const L = lesson(n), x = Math.random();
-      if (x < .05) { L.att[s.id] = 'abs'; continue; }
-      if (x < .08) { L.att[s.id] = 'inap'; continue; }
+    for (let n = 1; n <= 2; n++) {                                  // L1 et L2 faites, tout le monde présent
+      const L = lesson(n);
       const lv = (base) => Math.max(0, Math.min(8, Math.round(base + prog * (n - 1) + (Math.random() * 2.4 - 1.2))));
       const fb = Math.max(1, Math.min(10, moral + R(-2, 2)));
       L.wb = L.wb || {}; L.wb[s.id] = { fb, dl: Math.random() < .12 ? [pick(zones)] : [] };
@@ -2324,7 +2323,7 @@ const A = {
     if (!(await confirmBox('Supprimer « ' + esc(t.n) + ' » ?', 'Les leçons qui utilisent déjà ce pilier le gardent.', 'Supprimer', true))) return;
     ROOT.themes = themes().filter(x => x.id !== d.id); save(); render(); },
   testClass: async () => { const ex = Object.values(ROOT.classes).find(c => c.settings.className === 'Classe Test');
-    const ch = await choiceBox('🧪 Classe Test', '39 élèves en 2 groupes · 7 leçons, leçon du jour : 6. L1 diagnostic · L2 Réagir vite / Position du lanceur · L3 Courir droit / Pousser vite et fort · L4 Bats Ta Performance ! · L5 Utilisation des bras / Angle d’envol · L6 piliers à choisir · L7 évaluation du projet. 6 sprints de 6 s et 6 lancers, 8 points max.',
+    const ch = await choiceBox('🧪 Classe Test', '39 élèves en 2 groupes · 7 leçons, leçon du jour : 3 (L1 et L2 déjà saisies, aucun absent). L1 diagnostic · L2 Réagir vite / Position du lanceur · L3 Courir droit / Pousser vite et fort · L4 Bats Ta Performance ! · L5 Utilisation des bras / Angle d’envol · L6 piliers à choisir · L7 évaluation du projet. 6 sprints de 6 s et 6 lancers, 8 points max.',
       ex ? [{label:'Ouvrir', value:'open', cls:'primary'}, {label:'Régénérer', value:'new', cls:'orange'}] : [{label:'Créer', value:'new', cls:'primary'}]);
     if (!ch) return; if (ch === 'new') makeTestClass(); else useClass(ex.id); save(); toast('🧪 Classe Test'); render(); },
   compDetail: d => { UI.sid = d.sid; UI.profTab = 'compDetail'; render(); window.scrollTo(0,0); },
