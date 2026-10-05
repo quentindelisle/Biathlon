@@ -10,7 +10,7 @@
    ===================================================================== */
 'use strict';
 
-const APP_VERSION = '8.2.3';
+const APP_VERSION = '8.2.4';
 const STORE_KEY = 'neps_biathlon5s_v2';
 const QR_CHUNK = 440;           // caractères base45 par QR (QR version 11 max : facile à lire par une caméra)
 
@@ -658,23 +658,20 @@ function obsBlock(n, sid, a){
 function wellSuivi(sid){
   const wv = v => v ? `<span class="wv" style="background:${scaleColor(v)};color:${v>=5&&v<=7?'#0A1633':'#fff'}">${v}</span>` : '<span class="muted">—</span>';
   let rows = '';
-  for (let n = 1; n <= S.settings.nbLessons; n++) { const fb = fbOf(n, sid), dl = dlOf(n, sid), at = attOf(n, sid);
-    if (!fb && !dl.length) continue;
-    rows += `<tr><td><b>L${n}</b><div class="ls-title">${esc(lessonTitle(n))}</div>${at==='inap'?'<span class="tag inapte">Inapte</span>':''}</td><td class="c">${wv(fb)}${fb ? ` <small>${esc(SCALES.forme[fb-1][0] + ' ' + SCALES.forme[fb-1][1])}</small>` : ''}</td><td>${dl.length ? esc(dl.map(zoneName).join(', ')) : '—'}</td></tr>`; }
-  return rows ? `<div class="card strong"><h2>💪 Forme et douleurs (appel)</h2><div class="pj-table-wrap"><table class="pj-table"><tr><th>Leçon</th><th>💪 Forme</th><th>🩹 Douleurs</th></tr>${rows}</table></div></div>` : '';
+  for (let n = 1; n <= S.settings.nbLessons; n++) { const dl = dlOf(n, sid), at = attOf(n, sid);
+    if (!dl.length) continue;
+    rows += `<tr><td><b>L${n}</b><div class="ls-title">${esc(lessonTitle(n))}</div>${at==='inap'?'<span class="tag inapte">Inapte</span>':''}</td><td>${esc(dl.map(zoneName).join(', '))}</td></tr>`; }
+  return rows ? `<div class="card strong"><h2>🩹 Douleurs signalées (appel)</h2><div class="pj-table-wrap"><table class="pj-table"><tr><th>Leçon</th><th>🩹 Douleurs</th></tr>${rows}</table></div></div>` : '';
 }
 /* Forme + douleurs pendant l'appel (prof) */
 function appelWellModal(sid){
   const n = curLesson(), L = lesson(n); L.wb = L.wb || {};
   const cur = L.wb[sid] || {};
-  let fb = cur.fb ?? null, sel = [...(cur.dl || [])];
-  const m = modal(`<h2>💪 ${esc(nameOf(sid))} · début de leçon</h2><div id="wm-sc"></div>
-    <h3 style="margin-top:10px">🩹 Douleurs</h3><div class="pain-wrap"><div id="body-box"></div>
+  let sel = [...(cur.dl || [])];
+  const m = modal(`<h2>🩹 ${esc(nameOf(sid))} · où as-tu mal ?</h2><div class="pain-wrap"><div id="body-box"></div>
       <div class="pain-side"><div class="btn-row" id="extra-z"></div><p id="pain-list" style="font-weight:800"></p></div></div>
     <div class="btn-row spread" style="margin-top:10px"><button class="btn" data-p="cancel">Annuler</button><button class="btn primary" data-p="ok">Valider</button></div>`, { wide:true });
   const draw = () => {
-    m.querySelector('#wm-sc').innerHTML = scale10('État de forme', '💪', fb, 'data-wv="1"');
-    m.querySelectorAll('[data-wv]').forEach(b => b.onclick = e => { e.stopPropagation(); fb = fb === +b.dataset.v ? null : +b.dataset.v; draw(); });
     m.querySelector('#body-box').innerHTML = bodySVG(sel);
     m.querySelector('#extra-z').innerHTML = ZONES.filter(q => !q.x).map(q => `<button class="btn ${sel.includes(q.k)?'red':''}" data-z="${q.k}">${q.n}</button>`).join('');
     m.querySelector('#pain-list').textContent = sel.length ? sel.map(zoneName).join(' · ') : 'Aucune douleur';
@@ -682,7 +679,7 @@ function appelWellModal(sid){
   };
   draw();
   m.querySelector('[data-p="cancel"]').onclick = () => closeModal();
-  m.querySelector('[data-p="ok"]').onclick = () => { if (fb == null && !sel.length) delete L.wb[sid]; else L.wb[sid] = { fb, dl: sel }; save(); closeModal(); render(); };
+  m.querySelector('[data-p="ok"]').onclick = () => { if (!sel.length) delete L.wb[sid]; else L.wb[sid] = { dl: sel }; save(); closeModal(); render(); };
 }
 /* Banque de thèmes (Paramètres du cycle) */
 function profThemes(full){
@@ -882,8 +879,9 @@ function viewProjetDetail(){
   const sum = a => { const g = suggest(sid, a); if (!g) return `<div class="muted">Pas encore de données</div>`;
     return `<div class="pj-sum">Meilleure perf : <b>${pts(g.best)}</b> · Moyenne récente : <b>${fmt(g.moy)}</b> · Cible réussie : <b>${g.rate!=null?Math.round(g.rate*100)+' %':'—'}</b> des tentatives ·
       ${g.trend >= 0.5 ? '📈 en progrès' : g.trend <= -0.5 ? '📉 en baisse' : '➡️ stable'}</div>`; };
+  const painToday = dlOf(F, sid);
   const choose = a => { const g = suggest(sid, a), cur = D[a==='s'?'cibleS':'cibleB'];
-    const reco = 'conseillee';
+    const reco = painToday.length ? 'prudente' : 'conseillee';
     const opt = (k, lbl) => g ? `<button class="pj-opt ${cur===g[k]?'on':''} ${reco===k?'reco':''}" data-action="pjSet" data-a="${a}" data-v="${g[k]}"><small>${lbl}${reco===k?' · conseil':''}</small><b>${pts(g[k])}</b><small>${esc(ACT[a].unit(g[k]))}</small></button>` : '';
     return `<div class="pj-choice"><h3>${ACT[a].ico} Ma cible ${a==='s'?'en sprint':'au tir'}</h3>
       <div class="pj-opts">${opt('prudente','Prudente')}${opt('conseillee','Conseillée')}${opt('ambitieuse','Ambitieuse')}</div>
@@ -895,7 +893,7 @@ function viewProjetDetail(){
     ${obsBilan(sid) ? `<div class="card strong compact"><h2>👀 Mes critères observés</h2>${obsBilan(sid)}</div>` : ''}
     <div class="card strong compact"><h2>🔎 En résumé</h2>
       <div><b>🏃 Sprint</b> ${sum('s')}</div><div style="margin-top:6px"><b>🏀 Tir</b> ${sum('b')}</div></div>
-    <div class="card strong compact"><div class="pj-choices">${choose('s')}${choose('b')}</div>
+    <div class="card strong compact">${painToday.length ? `<div class="advice">🩹 Douleur signalée aujourd'hui (${esc(painToday.map(zoneName).join(', '))}) : la cible <b>prudente</b> est conseillée.</div>` : ''}<div class="pj-choices">${choose('s')}${choose('b')}</div>
       <label class="field" style="margin-top:10px">Mon projet<textarea id="pj-text" style="min-height:70px">${esc(P.texte||'')}</textarea></label>
       <div class="btn-row" style="margin-top:10px"><button class="btn green" data-action="pjSave">💾 Valider mon projet</button>
       ${P.ts?`<span class="muted">Enregistré le ${new Date(P.ts).toLocaleDateString('fr-FR')}</span>`:''}</div></div>`;
@@ -1342,7 +1340,8 @@ function profCibles(){
       ${sourceSelect(n, 'Cibles de la classe')}
       <details><summary style="font-weight:900;cursor:pointer">Même cible pour toute la classe…</summary><div style="display:grid;gap:10px;margin-top:10px">${bulk('s')}${bulk('b')}</div></details></div>
     <div class="tiles">${list.map(s => { const at = attOf(n, s.id);
-    return `<div class="att-tile tg-tile">${band(s.id)}<div class="name">${esc(nameOf(s.id))} ${at==='abs'?'<span class="tag abs">Abs.</span>':at==='inap'?'<span class="tag inapte">Inapte</span>':''}</div>
+    const pain = dlOf(n, s.id);
+    return `<div class="att-tile tg-tile">${band(s.id)}<div class="name">${esc(nameOf(s.id))} ${at==='abs'?'<span class="tag abs">Abs.</span>':at==='inap'?'<span class="tag inapte">Inapte</span>':''}${pain.length ? ` <span class="tag pain">🩹 ${esc(pain.map(zoneName).join(', '))}</span>` : ''}</div>
       ${block(s.id, 's')}${block(s.id, 'b')}</div>`; }).join('')}</div>`;
 }
 function profEleves(){
@@ -1361,13 +1360,13 @@ function profEleves(){
 function profAppel(){
   const n = curLesson(), L = lesson(n);
   const abs = S.students.filter(s=>attOf(n,s.id)==='abs').length, inap = S.students.filter(s=>attOf(n,s.id)==='inap').length;
-  return `<div class="card strong"><h2>Appel · Leçon ${n}</h2><div class="muted" style="font-weight:700">${S.students.length-abs-inap} présent(s) · ${abs} absent(s) · ${inap} inapte(s) · forme notée : ${S.students.filter(s => (L.wb || {})[s.id]?.fb).length}/${S.students.length-abs}.</div></div>
+  return `<div class="card strong"><h2>Appel · Leçon ${n}</h2><div class="muted" style="font-weight:700">${S.students.length-abs-inap} présent(s) · ${abs} absent(s) · ${inap} inapte(s) · 🩹 douleur(s) signalée(s) : ${S.students.filter(s => (L.wb || {})[s.id]?.dl?.length).length}.</div></div>
     <div class="tiles">${sortedStudents().map(s => { const a = attOf(n,s.id);
       const w = (L.wb || {})[s.id] || {}, dl = w.dl || [];
       return `<div class="att-tile ${a==='abs'?'abs':a==='inap'?'inapte':''}">${band(s.id)}<div class="name">${esc(nameOf(s.id))}</div>
         <div class="btn-row"><button class="btn ${a==='abs'?'abs-on':''}" data-action="att" data-sid="${s.id}" data-v="abs">Absent</button>
         <button class="btn ${a==='inap'?'inapte-on':''}" data-action="att" data-sid="${s.id}" data-v="inap">Inapte</button></div>
-        ${a === 'abs' ? '' : `<button class="btn small well-btn" data-action="appelWell" data-sid="${s.id}">💪 ${w.fb ? `<span class="wv" style="background:${scaleColor(w.fb)};color:${w.fb>=5&&w.fb<=7?'#0A1633':'#fff'}">${w.fb}</span>` : '—'} · 🩹 ${dl.length ? `<b style="color:#D0161B">${esc(dl.map(zoneName).join(', '))}</b>` : 'aucune'}</button>`}</div>`; }).join('')}</div>`;
+        ${a === 'abs' ? '' : `<button class="btn small well-btn" data-action="appelWell" data-sid="${s.id}">🩹 Douleurs : ${dl.length ? `<b style="color:#D0161B">${esc(dl.map(zoneName).join(', '))}</b>` : 'aucune'}</button>`}</div>`; }).join('')}</div>`;
 }
 function profGroupes(){
   const G = nbGroups();
@@ -1524,7 +1523,7 @@ function exportXlsx(){
   const syn = [head];
   let maxA = 0; for (let n = 1; n <= N; n++) maxA = Math.max(maxA, nbAtt(n,'s'), nbAtt(n,'b'));
   const det = [['Nom','Prénom','Leçon','Titre','Statut','Épreuve','Cible (points)','Cible (plot)',
-    ...Array.from({length:maxA},(_,k)=>`Tentative ${k+1}`), 'Moyenne (points)', 'Meilleur (points)', 'Forme (appel) /10', 'Douleurs (appel)', 'Pilier', 'Critères observés', 'Courses (fil rouge)', 'Fil rouge de la leçon']];
+    ...Array.from({length:maxA},(_,k)=>`Tentative ${k+1}`), 'Moyenne (points)', 'Meilleur (points)', 'Douleurs (appel)', 'Pilier', 'Critères observés', 'Courses (fil rouge)', 'Fil rouge de la leçon']];
   sortedStudents().forEach(s => {
     const nom = s.nom || '', pre = s.prenom || s.disp || '';
     const row = [nom, pre, nameOf(s.id), nbGroups() > 1 && s.grp ? groupName(s.grp) : ''];
@@ -1544,7 +1543,7 @@ function exportXlsx(){
         det.push([nom, pre, n, lessonTitle(n), at==='abs'?'Absent':at==='inap'?'Inapte':'Présent', ACT[a].label,
           num(ti.value), ti.value!=null ? ACT[a].unit(ti.value) : '',
           ...Array.from({length:maxA},(_,k)=> num(p[k])), v.length ? r2(avg(v)) : '', v.length ? Math.max(...v) : '',
-          ...(a === 's' ? [num(fbOf(n, s.id)), dlOf(n, s.id).map(zoneName).join(', ')] : ['','']),
+          a === 's' ? dlOf(n, s.id).map(zoneName).join(', ') : '',
           ...(th => th ? [th.n, (ob => ob ? th.cr.map((c, i) => `${c} : ${ob[i] ? obsName(ob[i], th) : '—'}`).join(' ; ') : '')(obsOf(n, s.id, a))] : ['',''])(lessonPil(n, a)),
           ...(a === 's' ? (f => f ? [f.nc != null ? ncName(f.nc) : '', f.lv ? `${COMP_LV[f.lv].n} (${f.why})` : ''] : ['',''])(frLesson(n, s.id)) : ['','']),]);
       });
@@ -1757,6 +1756,7 @@ function binSeance(n){
       if (wb) { w.u8(nv(wb.fb)); w.u32(zoneMask(wb.dl)); }
     });
   }
+  w.u8(1); list.forEach(s => w.u32(zoneMask(dlOf(cur, s.id))));      // douleurs signalées à l'appel du jour
   return w.bytes();
 }
 function seanceDecode(u, r, ver){
@@ -1780,7 +1780,9 @@ function seanceDecode(u, r, ver){
       hist.push({ k, kind, title, pil, rows });
     }
   }
-  return { k:'seance', names, lesson: les, sums, hist };
+  let painsNow = null;
+  if (ver >= 2 && !r.end() && r.u8()) painsNow = names.students.map(() => maskZones(r.u32()));
+  return { k:'seance', names, lesson: les, sums, hist, painsNow };
 }
 async function applySeance(p){
   const c = targetClass(p.names.cid, p.names.className, true);
@@ -1807,6 +1809,7 @@ async function applySeance(p){
         S.results[h.k][s.id] = { c:o.c, b:o.b, fa:o.fa, nc:o.nc, ...(o.ob ? { ob:o.ob } : {}), ...(o.obB ? { obB:o.obB } : {}), ts: 1, d: 'prof' };
       } });
   });
+  if (p.painsNow) { const Lc = lesson(p.lesson.settings.current); Lc.wb = {}; S.students.forEach((s, i) => { if (p.painsNow[i]?.length) Lc.wb[s.id] = { dl: p.painsNow[i] }; }); }
   ROOT.seance = { cid: S.id, n: p.lesson.settings.current, at: now() };
   save(); toast(`✓ Séance reçue : ${className()} · leçon ${p.lesson.settings.current}`, 3500);
   UI.filter = null; go('home');

@@ -472,3 +472,4 @@ select[disabled]{opacity:.7}
 .pil-sel{display:inline-flex;align-items:center;gap:6px;font-weight:900;font-size:18px}
 .pil-sel select{min-width:220px}
 .pil-sel select{font-size:15px;min-height:40px;padding:4px 10px}
+.tag.pain{color:#fff;background:#D0161B;border-color:#D0161B}
