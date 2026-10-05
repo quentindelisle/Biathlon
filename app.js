@@ -10,7 +10,7 @@
    ===================================================================== */
 'use strict';
 
-const APP_VERSION = '8.0.0';
+const APP_VERSION = '8.1.0';
 const STORE_KEY = 'neps_biathlon5s_v2';
 const QR_CHUNK = 440;           // caractères base45 par QR (QR version 11 max : facile à lire par une caméra)
 
@@ -353,18 +353,27 @@ function go(view, opts={}){ Object.assign(UI, opts); UI.view = view; render(); w
 
 function render(){
   stopScan();
-  const v = UI.view, m = $('#main');
+  let v = UI.view; const m = $('#main');
+  if (!ROOT.role) { setTop('Biathlon · CA1', 'Choix du rôle de la tablette'); m.innerHTML = viewRole(); return; }
+  const prof = isProfRole();
+  /* tablette élève : scanner la séance, saisir, projet (évaluation finale), envoyer */
+  if (!prof && !['home','saisie','entry','projet','projetDetail','send','receive'].includes(v)) v = UI.view = 'home';
+  /* tablette enseignant : tout passe par l'espace enseignant (code) */
+  if (prof && !UI.profUnlocked && v !== 'home') v = UI.view = 'home';
+  if (prof && UI.profUnlocked && v === 'home') { v = UI.view = 'prof'; UI.profTab = 'menu'; }
   const homeBtn = `<button class="btn small" data-action="go" data-view="home">⌂ Accueil</button>`;
-  if (v === 'home') { setTop('Biathlon · CA1', lessonLabel(curLesson())); m.innerHTML = viewHome(); }
-  else if (v === 'saisie') { setTop('Saisie · Leçon ' + curLesson(), UI.filter ? groupName(UI.filter) : lessonTitle(curLesson()), homeBtn); m.innerHTML = viewSaisie(); }
+  const menuBtn = `<button class="btn small" data-action="profTab" data-tab="menu">☰ Menu</button>`;
+  const head = sec => prof ? sectHeader(sec) : '';
+  if (v === 'home') { setTop('Biathlon · CA1', prof ? 'Tablette enseignant' : 'Tablette élève'); m.innerHTML = prof ? viewHomeProfLocked() : viewHomeEleve(); }
+  else if (v === 'saisie') { if (prof) UI.profTab = 'saisieP'; setTop('Saisie · Leçon ' + curLesson(), UI.filter ? groupName(UI.filter) : lessonTitle(curLesson()), prof ? menuBtn : homeBtn); m.innerHTML = head('jour') + viewSaisie(); }
   else if (v === 'entry') { setTop('Saisie · ' + nameOf(UI.sid), lessonLabel(curLesson()), `<button class="btn small" data-action="go" data-view="saisie">▦ Élèves</button>`); m.innerHTML = viewEntry(); bindEntry(); }
-  else if (v === 'stats') { setTop('Statistiques', 'Choisis un élève', homeBtn); m.innerHTML = viewStatsTiles(); }
-  else if (v === 'projet') { setTop('Projet de l\'élève', 'Évaluation finale', `<button class="btn small" data-action="go" data-view="prof">🔒 Enseignant</button>`); m.innerHTML = viewProjetTiles(); }
+  else if (v === 'stats') { UI.profTab = 'statsP'; setTop('Statistiques', 'Choisir un élève', menuBtn); m.innerHTML = head('bilans') + viewStatsTiles(); }
+  else if (v === 'projet') { if (prof) UI.profTab = 'projetP'; setTop('Projet de l\'élève', 'Évaluation finale', prof ? menuBtn : homeBtn); m.innerHTML = head('bilans') + viewProjetTiles(); }
   else if (v === 'projetDetail') { setTop('Projet · ' + nameOf(UI.sid), '', `<button class="btn small" data-action="go" data-view="projet">▦ Élèves</button>`); m.innerHTML = viewProjetDetail(); }
   else if (v === 'statsDetail') { setTop('Stats · ' + nameOf(UI.sid), '', `<button class="btn small" data-action="go" data-view="stats">▦ Élèves</button>`); m.innerHTML = viewStatsDetail(); }
-  else if (v === 'prof') { setTop('Espace enseignant', lessonLabel(curLesson()), homeBtn); m.innerHTML = viewProf(); afterProf(); }
+  else if (v === 'prof') { setTop('Espace enseignant', lessonLabel(curLesson()), `<button class="btn small" data-action="lockProf">🔒 Verrouiller</button>`); m.innerHTML = viewProf(); afterProf(); }
   else if (v === 'send') { setTop('Envoyer mes saisies', 'QR code à scanner par l\'enseignant', homeBtn); m.innerHTML = viewSend(); afterSend(); }
-  else if (v === 'receive') { setTop('Scanner un QR', '', `<button class="btn small" data-action="go" data-view="prof">🔒 Enseignant</button>`); m.innerHTML = viewReceive(); afterReceive(); }
+  else if (v === 'receive') { setTop('Scanner la séance', 'QR affiché par l\'enseignant', homeBtn); m.innerHTML = viewReceive(); afterReceive(); }
 }
 
 /* ---------------------------------------------------------------------
@@ -636,12 +645,12 @@ function appelWellModal(sid){
   m.querySelector('[data-p="ok"]').onclick = () => { if (fb == null && !sel.length) delete L.wb[sid]; else L.wb[sid] = { fb, dl: sel }; save(); closeModal(); render(); };
 }
 /* Banque de thèmes (Paramètres du cycle) */
-function profThemes(){
-  const T = themes();
+function profThemes(full){
+  const T = themes(), open = full || UI.thOpen;
   const used = id => Object.values(S.lessons).some(L => L.kind === 'theme' && L.th && L.th.id === id);
   return `<div class="card compact"><div class="row"><h2 class="grow" style="margin:0">📚 Thèmes de leçon <span class="muted">· ${T.length}</span></h2>
-      <button class="btn small" data-action="thToggle">${UI.thOpen ? 'Masquer' : 'Afficher / modifier'}</button></div>
-    ${UI.thOpen ? `<div class="th-list">${T.map(t => `<div class="th-item">
+      ${full ? '' : `<button class="btn small" data-action="thToggle">${UI.thOpen ? 'Masquer' : 'Afficher / modifier'}</button>`}</div>
+    ${open ? `<div class="th-list">${T.map(t => `<div class="th-item">
         <div class="row"><input type="text" class="grow th-name" data-field="thName" data-id="${t.id}" value="${esc(t.n)}" placeholder="Nom du thème">
           <select data-field="thAct" data-id="${t.id}"><option value="s" ${t.a==='s'?'selected':''}>🏃 Course</option><option value="b" ${t.a==='b'?'selected':''}>🏀 Lancer</option></select>
           <button class="btn small red" data-action="thDel" data-id="${t.id}">🗑</button></div>
@@ -788,6 +797,7 @@ function makeTestClass(){
 
 const finaleLesson = () => { for (let k = 1; k <= S.settings.nbLessons; k++) if (isFinale(k)) return k; return S.settings.nbLessons; };
 function suggest(sid, a){
+  if (!isProfRole() && sumOf(sid)?.[a]) return sumOf(sid)[a];        // tablette élève : bilan complet reçu avec la séance
   const F = finaleLesson(), byL = [];
   for (let n = 1; n <= S.settings.nbLessons; n++) { if (n === F) continue; const v = vals(perf(n, sid, a)); if (v.length) byL.push({ n, v }); }
   if (!byL.length) return null;
@@ -829,6 +839,9 @@ function viewProjetDetail(){
   const sum = a => { const g = suggest(sid, a); if (!g) return `<div class="muted">Pas encore de données</div>`;
     return `<div class="pj-sum">Meilleure perf : <b>${pts(g.best)}</b> · Moyenne récente : <b>${fmt(g.moy)}</b> · Cible réussie : <b>${g.rate!=null?Math.round(g.rate*100)+' %':'—'}</b> des tentatives ·
       ${g.trend >= 0.5 ? '📈 en progrès' : g.trend <= -0.5 ? '📉 en baisse' : '➡️ stable'}</div>`; };
+  const SM = !isProfRole() ? sumOf(sid) : null;   // tablette élève : bilan complet reçu avec la séance
+  if (SM) { fbs.length = 0; fas.length = 0; Object.keys(painCount).forEach(k => delete painCount[k]); rows = '';
+    if (SM.fb) fbs.push(SM.fb); if (SM.fa) fas.push(SM.fa); (SM.dl || []).forEach(k => painCount[k] = 1); }
   const pains = Object.entries(painCount).sort((a,b)=>b[1]-a[1]);
   const choose = a => { const g = suggest(sid, a), cur = D[a==='s'?'cibleS':'cibleB'];
     let reco = 'conseillee';
@@ -839,13 +852,13 @@ function viewProjetDetail(){
       <div class="row" style="margin-top:6px"><div class="stepper"><button data-action="pjStep" data-a="${a}" data-d="-1">−</button><span class="val" style="min-width:170px">${cur!=null?plotShort(a, cur):'—'}</span><button data-action="pjStep" data-a="${a}" data-d="1">+</button></div></div></div>`; };
   return `<div class="entry-name">${band(sid)}<div class="who">${esc(nameOf(sid))}</div><span class="muted" style="font-weight:800">Projet · évaluation finale (L${F})</span>
       <button class="btn" data-action="go" data-view="projet" style="margin-left:auto">← Retour aux élèves</button></div>
-    <div class="card strong compact"><h2>📋 Mon bilan, leçon par leçon</h2>
-      <div class="pj-table-wrap"><table class="pj-table"><tr><th>Leçon</th><th>🏃 Sprint</th><th>🏀 Tir</th><th>💪 Forme avant</th><th>🩹 Douleurs</th><th>😮‍💨 Forme après</th></tr>${rows || '<tr><td colspan="6" class="muted">Pas encore de données</td></tr>'}</table></div></div>
+    ${!rows && !isProfRole() ? '' : `<div class="card strong compact"><h2>📋 Mon bilan, leçon par leçon</h2>
+      <div class="pj-table-wrap"><table class="pj-table"><tr><th>Leçon</th><th>🏃 Sprint</th><th>🏀 Tir</th><th>💪 Forme avant</th><th>🩹 Douleurs</th><th>😮‍💨 Forme après</th></tr>${rows || '<tr><td colspan="6" class="muted">Pas encore de données</td></tr>'}</table></div></div>`}
     ${obsBilan(sid) ? `<div class="card strong compact"><h2>👀 Mes critères observés</h2>${obsBilan(sid)}</div>` : ''}
     <div class="card strong compact"><h2>🔎 En résumé</h2>
       <div><b>🏃 Sprint</b> ${sum('s')}</div><div style="margin-top:6px"><b>🏀 Tir</b> ${sum('b')}</div>
       <div style="margin-top:6px">💪 Forme avant : <b>${fbs.length?fmt(avg(fbs)):'—'}</b>/10 · 😮‍💨 après : <b>${fas.length?fmt(avg(fas)):'—'}</b>/10
-        ${pains.length?` · 🩹 Douleurs signalées : ${pains.map(([k,c])=>`${esc(zoneName(k))} (${c})`).join(', ')}`:''}</div></div>
+        ${pains.length?` · 🩹 Douleurs signalées : ${pains.map(([k,c])=>`${esc(zoneName(k))}${SM ? '' : ` (${c})`}`).join(', ')}`:''}</div></div>
     <div class="card strong compact"><h2>🏁 Aujourd'hui : évaluation finale</h2>
       ${scale10('Mon état de forme aujourd\'hui', '💪', D.formeJ, `data-action="pjWell" data-f="formeJ"`)}</div>
     <div class="card strong compact"><div class="pj-choices">${choose('s')}${choose('b')}</div>
@@ -1019,25 +1032,6 @@ function profCompDetail(){
       <div class="comp-btns">${[1,2,3,4].map(v => `<button class="cbtn ${C.D4===v?'on':''} ${sug===v&&!C.D4?'reco':''}" style="--cc:${COMP_LV[v].c};--cf:${COMP_LV[v].f}" data-action="compSet" data-k="D4" data-v="${v}">${COMP_LV[v].n}</button>`).join('')}
         ${C.D4 ? `<button class="btn ghost xs" data-action="compSet" data-k="D4" data-v="0">Effacer</button>` : ''}</div></div></div>`;
 }
-function openProf(){
-  if (UI.profUnlocked) return go('prof');
-  let code = '';
-  const m = modal(`<h2 class="center">🔒 Code enseignant</h2><div class="pin-dots">${'<span></span>'.repeat(4)}</div>
-    <div class="pin-pad">${[1,2,3,4,5,6,7,8,9,'⌫',0,'✕'].map(k=>`<button data-k="${k}">${k}</button>`).join('')}</div>
-    <p class="center muted" style="font-size:14px">Code par défaut : 0000 (modifiable dans l'onglet Export / Réglages)</p>`);
-  const dots = m.querySelectorAll('.pin-dots span');
-  m.querySelectorAll('[data-k]').forEach(b => b.onclick = () => {
-    const k = b.dataset.k;
-    if (k === '✕') return closeModal();
-    if (k === '⌫') code = code.slice(0,-1); else if (code.length < 4) code += k;
-    dots.forEach((d,i)=>d.classList.toggle('f', i < code.length));
-    if (code.length === 4) {
-      if (code === String(ROOT.pin || '0000')) { delete ROOT.advanced;
-        save(); UI.profUnlocked = true; UI.profTab = 'menu'; closeModal(); go('prof'); }
-      else { toast('Code incorrect'); code=''; dots.forEach(d=>d.classList.remove('f')); }
-    }
-  });
-}
 /* ---------------------------------------------------------------------
    Espace enseignant : menu principal + 4 rubriques
    --------------------------------------------------------------------- */
@@ -1049,45 +1043,144 @@ function classPicker(){
 function subTabs(items){
   return `<div class="tabs">${items.map(([k,l])=>`<button class="tab ${UI.profTab===k?'on':''}" data-action="profTab" data-tab="${k}">${l}</button>`).join('')}</div>`;
 }
+/* ---------------------------------------------------------------------
+   Rôle de la tablette : enseignant (paramétrage, QR de séance, récupération, bilans)
+   ou élève (scanner la séance, saisir, envoyer ses saisies)
+   --------------------------------------------------------------------- */
+const isProfRole = () => ROOT.role === 'prof';
+function pinPad(onOk, title='🔒 Code enseignant'){
+  let code = '';
+  const m = modal(`<h2 class="center">${title}</h2><div class="pin-dots">${'<span></span>'.repeat(4)}</div>
+    <div class="pin-pad">${[1,2,3,4,5,6,7,8,9,'⌫',0,'✕'].map(k=>`<button data-k="${k}">${k}</button>`).join('')}</div>
+    <p class="center muted" style="font-size:14px">Code par défaut : 0000 (modifiable dans Bilans → Export & sauvegarde)</p>`);
+  const dots = m.querySelectorAll('.pin-dots span');
+  m.querySelectorAll('[data-k]').forEach(b => b.onclick = () => {
+    const k = b.dataset.k;
+    if (k === '✕') return closeModal();
+    if (k === '⌫') code = code.slice(0,-1); else if (code.length < 4) code += k;
+    dots.forEach((d,i)=>d.classList.toggle('f', i < code.length));
+    if (code.length === 4) {
+      if (code === String(ROOT.pin || '0000')) { closeModal(); onOk(); }
+      else { toast('Code incorrect'); code=''; dots.forEach(d=>d.classList.remove('f')); }
+    }
+  });
+}
+function openProf(){
+  if (UI.profUnlocked) { UI.profTab = UI.profTab || 'menu'; return go('prof'); }
+  pinPad(() => { delete ROOT.advanced; save(); UI.profUnlocked = true; UI.profTab = 'menu'; go('prof'); });
+}
+function viewRole(){
+  return `<div class="home">
+    <img class="home-logo" src="logo-app.png" alt="N'EPS numérique – CA1 Biathlon">
+    <div class="home-lesson"><div class="big">Cette tablette est…</div></div>
+    <div class="home-grid two">
+      <button class="home-btn prof" data-action="setRole" data-r="prof"><span class="ico">👩‍🏫</span>Tablette enseignant<small>Préparer · QR de séance · récupérer · bilans</small></button>
+      <button class="home-btn saisie" data-action="setRole" data-r="eleve"><span class="ico">🧒</span>Tablette élève<small>Scanner la séance · saisir · envoyer</small></button>
+    </div>
+    <p class="muted center" style="font-weight:700">Les données déjà présentes sur la tablette sont conservées.</p></div>`;
+}
+function viewHomeEleve(){
+  const has = S.students.length && ROOT.seance && ROOT.seance.cid === S.id;
+  const n = curLesson(), pres = S.students.filter(s => present(n, s.id)).length;
+  return `<div class="home">
+    <img class="home-logo" src="logo-app.png" alt="N'EPS numérique – CA1 Biathlon">
+    ${has ? `<div class="class-chips"><span class="class-chip on">🏫 ${esc(className())}</span></div>
+      <div class="home-lesson"><div class="big">Leçon ${n} / ${S.settings.nbLessons}</div>
+        <div style="font-size:20px;font-weight:800">${esc(lessonTitle(n) || 'Sans titre')}</div>
+        <div class="muted" style="font-weight:700">🏃 ${nbAtt(n,'s')} sprint(s) de ${fmt(S.settings.timeS)} s · 🏀 ${nbAtt(n,'b')} tir(s) · ${pres}/${S.students.length} présent(s)</div>
+        <div class="muted" style="font-size:14px">Séance scannée le ${new Date(ROOT.seance.at).toLocaleDateString('fr-FR')} à ${new Date(ROOT.seance.at).toLocaleTimeString('fr-FR',{hour:'2-digit',minute:'2-digit'})}</div></div>`
+      : `<div class="home-lesson"><div class="big">Aucune séance</div><div style="font-weight:800">Scanne le QR de la séance affiché par ton enseignant.</div></div>`}
+    <div class="home-grid steps">
+      <button class="home-btn scan" data-action="go" data-view="receive"><span class="ico">📷</span>1. Scanner la séance</button>
+      <button class="home-btn saisie" data-action="goSaisie" ${has ? '' : 'disabled'}><span class="ico">✍️</span>2. Saisir</button>
+      ${has && isFinale(n) ? `<button class="home-btn stats" data-action="go" data-view="projet"><span class="ico">🎯</span>Mon projet</button>` : ''}
+      <button class="home-btn send" data-action="go" data-view="send" ${has ? '' : 'disabled'}><span class="ico">📤</span>3. Envoyer mes saisies</button>
+    </div>
+    <button class="btn small ghost" data-action="switchRole" style="margin-top:8px">⚙️ Enseignant</button></div>`;
+}
+function viewHomeProfLocked(){
+  return `<div class="home">
+    <img class="home-logo" src="logo-app.png" alt="N'EPS numérique – CA1 Biathlon">
+    <div class="class-chips"><span class="class-chip on">🏫 ${esc(className())}</span></div>
+    <div class="home-lesson"><div class="big">Leçon ${curLesson()} / ${S.settings.nbLessons}</div><div style="font-size:20px;font-weight:800">${esc(lessonTitle(curLesson()) || 'Sans titre')}</div></div>
+    <div class="home-grid one"><button class="home-btn prof" data-action="openProf"><span class="ico">🔒</span>Espace enseignant</button></div></div>`;
+}
+/* Espace enseignant : 4 étapes */
+const PSECT = {
+  prep:   { ico:'🛠', t:'Préparer le cycle', tabs:[['classes','👥 Classe & élèves'],['groupes','🎽 Groupes'],['cycle','⚙️ Paramètres du cycle'],['themes','📚 Thèmes']] },
+  jour:   { ico:'📅', t:'Leçon du jour', tabs:[['appel','✅ Appel'],['lgroupes','🎽 Groupes du jour'],['cibles','🎯 Cibles'],['qr','📲 QR de la séance'],['saisieP','✍️ Saisie (dépannage)']] },
+  recup:  { ico:'📥', t:'Récupérer les saisies', tabs:[] },
+  bilans: { ico:'📊', t:'Bilans', tabs:[['statsP','📊 Statistiques'],['projetP','🎯 Projets'],['comp','❤️ Compétence D4'],['export','📁 Export & sauvegarde']] } };
+const PREDIR = { saisieP:'saisie', statsP:'stats', projetP:'projet' };
+function sectOf(tab){ if (tab === 'compDetail') return 'bilans'; if (tab === 'recup') return 'recup'; return Object.keys(PSECT).find(k => PSECT[k].tabs.some(t => t[0] === tab)) || null; }
+function sectHeader(sec){
+  const P = PSECT[sec], N = S.settings.nbLessons, cur = curLesson();
+  return `<div class="btn-row" style="margin-bottom:10px"><button class="btn small" data-action="profTab" data-tab="menu">← Menu enseignant</button></div>
+    <div class="card strong compact"><h2>${P.ico} ${P.t}</h2>${classPicker()}
+      ${sec === 'jour' ? `<h3>Leçon du jour</h3><div class="lesson-picker">${Array.from({length:N},(_,i)=>i+1).map(n=>`<button class="lp ${n===cur?'on':''}" data-action="setCurrent" data-n="${n}">${n}</button>`).join('')}</div>
+        <div class="muted" style="font-weight:800;margin-top:4px">${esc(lessonTitle(cur) || 'Sans titre')}</div>` : ''}</div>
+    ${P.tabs.length ? subTabs(P.tabs) : ''}`;
+}
 function viewProf(){
   let t = UI.profTab || 'menu';
   if (t === 'lecon') t = UI.profTab = 'appel';
-  if (t === 'classes' && false) t = 'classes';
+  if (t === 'menu' || PREDIR[t]) { UI.profTab = 'menu'; return profMenu(); }
+  const sec = sectOf(t); if (!sec) { UI.profTab = 'menu'; return profMenu(); }
   let body = '';
-  if (t === 'menu') return profMenu();
-  if (t === 'classes' || t === 'groupes') {
-    body = `<div class="card strong compact"><h2>🏫 Classes</h2>${classPicker()}</div>
-      ${subTabs([['classes','👥 Classe & élèves'],['groupes','🎽 Groupes']])}
-      ${t === 'classes' ? profClasses() + profEleves() : profGroupes()}`;
-  } else if (t === 'cycle') {
-    body = `<div class="card strong compact"><h2>⚙️ Paramètres du cycle</h2>${classPicker()}</div>${profCycle()}`;
-  } else if (['appel','lgroupes','cibles'].includes(t)) {
-    const N = S.settings.nbLessons, cur = curLesson();
-    body = `<div class="card strong compact"><h2>📅 Leçon</h2>${classPicker()}
-        <h3>Leçon du jour</h3><div class="lesson-picker">${Array.from({length:N},(_,i)=>i+1).map(n=>`<button class="lp ${n===cur?'on':''}" data-action="setCurrent" data-n="${n}">${n}</button>`).join('')}</div></div>
-      ${subTabs([['appel','✅ Appel'],['lgroupes','🎽 Modifier les groupes'],['cibles','🎯 Cibles']])}
-      ${t === 'appel' ? profAppel() : t === 'lgroupes' ? profDayGroups() : profCibles()}`;
-  } else if (t === 'export') {
-    body = profPartage() + profExport();
-  } else if (t === 'comp' && isAdv()) {
-    body = profComp();
-  } else if (t === 'compDetail' && isAdv()) {
-    body = profCompDetail();
-  } else return profMenu();
-  return `<div class="btn-row" style="margin-bottom:10px"><button class="btn small" data-action="profTab" data-tab="menu">← Menu enseignant</button></div>${body}`;
+  if (t === 'classes') body = profClasses() + profEleves();
+  else if (t === 'groupes') body = profGroupes();
+  else if (t === 'cycle') body = profCycle();
+  else if (t === 'themes') body = profThemes(true);
+  else if (t === 'appel') body = profAppel();
+  else if (t === 'lgroupes') body = profDayGroups();
+  else if (t === 'cibles') body = profCibles();
+  else if (t === 'qr') body = profSeanceQR();
+  else if (t === 'recup') body = profRecup();
+  else if (t === 'comp') body = profComp();
+  else if (t === 'compDetail') body = profCompDetail();
+  else if (t === 'export') body = profExport() + profTransfert();
+  return sectHeader(sec) + body;
 }
 function profMenu(){
   const n = curLesson(), pres = S.students.filter(s => present(n, s.id)).length;
-  return `<div class="card strong compact center"><b style="font-size:20px">🏫 ${esc(className())}</b> · Leçon ${n}/${S.settings.nbLessons} · ${pres}/${S.students.length} présent(s)</div>
-    <div class="pmenu">
-      <button class="pm-btn" data-action="profTab" data-tab="classes"><span class="ico">🏫</span>Classes<small>Classes · élèves · groupes</small></button>
-      <button class="pm-btn" data-action="profTab" data-tab="cycle"><span class="ico">⚙️</span>Paramètres du cycle<small>Leçons · sprints · lancers · plots</small></button>
-      <button class="pm-btn" data-action="profTab" data-tab="appel"><span class="ico">📅</span>Leçon<small>Appel · groupes du jour · cibles</small></button>
-      <button class="pm-btn" data-action="profTab" data-tab="export"><span class="ico">📁</span>Export / Sauvegarde<small>Excel · QR tablettes · sauvegarde</small></button>
-      ${isAdv() ? `<button class="pm-btn adv" data-action="go" data-view="projet"><span class="ico">🎯</span>Projet de l'élève<small>Bilan · forme · cibles de l'évaluation finale</small></button>
-        <button class="pm-btn adv" data-action="profTab" data-tab="comp"><span class="ico">❤️</span>Compétence D4<small>Forme · résultat · couleur finale</small></button>
-        <button class="pm-btn adv" data-action="testClass"><span class="ico">🧪</span>Classe Test<small>Ouvrir · régénérer des données inventées</small></button>` : ''}
-    </div>`;
+  const got = S.students.filter(s => { const r = res(n, s.id); return r && (vals(r.c).length || vals(r.b).length); }).length;
+  return `<div class="card strong compact center"><b style="font-size:20px">🏫 ${esc(className())}</b> · Leçon ${n}/${S.settings.nbLessons} ${esc(lessonTitle(n) ? '· ' + lessonTitle(n) : '')} · ${pres}/${S.students.length} présent(s) · ${got} saisie(s) reçue(s)</div>
+    <div class="pmenu steps">
+      <button class="pm-btn" data-action="profTab" data-tab="classes"><span class="step">1</span><span class="ico">🛠</span>Préparer le cycle<small>Classes · élèves · groupes · paramètres · thèmes</small></button>
+      <button class="pm-btn" data-action="profTab" data-tab="appel"><span class="step">2</span><span class="ico">📅</span>Leçon du jour<small>Appel · groupes · cibles · 📲 QR de la séance</small></button>
+      <button class="pm-btn" data-action="profTab" data-tab="recup"><span class="step">3</span><span class="ico">📥</span>Récupérer les saisies<small>Scanner les QR des tablettes élèves</small></button>
+      <button class="pm-btn" data-action="profTab" data-tab="statsP"><span class="step">4</span><span class="ico">📊</span>Bilans<small>Statistiques · projets · D4 · export</small></button>
+    </div>
+    <div class="btn-row" style="justify-content:center;margin-top:12px"><button class="btn small" data-action="testClass">🧪 Classe Test</button></div>`;
+}
+function profSeanceQR(){
+  const n = curLesson(), abs = S.students.filter(s => attOf(n, s.id)).length;
+  return `<div class="card strong"><h2>📲 QR de la séance · Leçon ${n}</h2>
+      <div class="muted" style="font-weight:700">${esc(lessonTitle(n) || 'Sans titre')} · ${S.students.length} élève(s) · ${abs} absent(s)/inapte(s) · ${nbGroups()} groupe(s)${isFinale(n) ? ' · avec le bilan de chaque élève pour son projet' : ''}</div>
+      <div class="advice info">Sur chaque tablette élève : <b>📷 1. Scanner la séance</b>. Faites l'appel et vérifiez les cibles <b>avant</b> d'afficher ce QR.</div>
+      <div id="qr-seance" class="center">Préparation…</div></div>`;
+}
+function profRecup(){
+  const n = curLesson();
+  const got = S.students.filter(s => { const r = res(n, s.id); return r && (vals(r.c).length || vals(r.b).length); }).length;
+  return `<div class="card strong"><h2>📥 Scanner les tablettes élèves</h2>
+      <div class="muted" style="font-weight:700">Sur chaque tablette élève : <b>📤 3. Envoyer mes saisies</b>, puis scannez le QR ici. Leçon ${n} : ${got}/${S.students.length} élève(s) avec des saisies.</div>
+      <div id="scan-area"></div>
+      <div class="btn-row" style="justify-content:center;margin-top:12px"><button class="btn primary" data-action="profTab" data-tab="recup">✓ Actualiser le compte</button>
+        <label class="btn">📂 Importer un fichier (.json)<input type="file" id="file-sync" accept=".json,application/json" hidden></label></div></div>`;
+}
+function profTransfert(){
+  return `<div class="card"><h2>🔁 Vers une autre tablette enseignant</h2>
+      <div class="btn-row"><button class="btn" data-action="showFullQR">🗂 QR Historique</button>
+        <button class="btn" data-action="fileFull">📤 Partager en fichier</button></div>
+      <div class="muted" style="font-size:14px;font-weight:700">À scanner dans « 📥 Récupérer les saisies » de l'autre tablette enseignant.</div></div>
+    <div class="card"><h2>Rôle de cette tablette</h2><button class="btn small" data-action="setRole" data-r="eleve">🧒 Passer en tablette élève</button></div>`;
+}
+function afterProf(){
+  if (UI.profTab === 'groupes' || UI.profTab === 'lgroupes') bindGroups();
+  if (UI.profTab === 'qr') (async () => { const area = $('#qr-seance'); const payload = await encodeBin(binSeance(curLesson()));
+    if (area && UI.profTab === 'qr' && UI.view === 'prof') showQRSeries(chunkQR(payload, 'S', 260), area, `Séance · ${esc(className())} · leçon ${curLesson()}`); })();
+  if (UI.profTab === 'recup') startScan($('#scan-area'), ['R','F'], async p => { await applyPacket(p); return 'continue'; });
 }
 function profClasses(){
   const cls = Object.values(ROOT.classes);
@@ -1116,8 +1209,6 @@ function profDayGroups(){
       ${moved?`<button class="btn small" data-action="resetDayGroups">Groupes habituels</button>`:''}</div></div>
     <div class="groups day">${Array.from({length:G},(_,i)=>zone(i+1)).join('')}${S.students.some(s => grpOf(s.id, n) === 0) ? zone(0) : ''}</div>`;
 }
-function afterProf(){ if (UI.profTab === 'groupes' || UI.profTab === 'lgroupes') bindGroups(); }
-
 function stepper(action, attrs, val, disp){
   return `<div class="stepper"><button data-action="${action}" ${attrs} data-d="-1">−</button><span class="val">${disp ?? val}</span><button data-action="${action}" ${attrs} data-d="1">+</button></div>`;
 }
@@ -1163,8 +1254,7 @@ function profCycle(){
         ${rangeField('Plots = pts max', st.plotsB, 'data-field="set" data-k="plotsB"', 1, 20)}
       </div>
       <details><summary style="font-weight:900;cursor:pointer">📏 Mise en place des plots</summary>${plotTable()}</details></div>
-    ${profThemes()}
-    <div class="card compact"><h2>Leçons</h2>${rows}</div>`;
+    <div class="card compact"><h2>Leçons</h2><div class="muted" style="font-weight:700;margin-bottom:6px">Nature de la leçon ou thème (thèmes à créer dans l'onglet 📚 Thèmes)</div>${rows}</div>`;
 }
 function sourceSelect(n, label=''){
   const L = lesson(n), kind = kindOf(n), cur = L.source;
@@ -1497,6 +1587,10 @@ const hasFullNames = c => c.students.some(s => s.nom);
 function mergeInto(c, results, projects){ const prev = S.id; useClass(c.id); const n = mergeData(results, projects); useClass(prev); return n; }
 async function applyPacket(p){
   if (!p || !p.k) throw new Error('Données non reconnues');
+  if (p.k === 'seance') {
+    if (isProfRole()) throw new Error('QR de séance : à scanner sur les tablettes élèves');
+    return applySeance(p);
+  }
   if (p.k === 'res') {
     const c = targetClass(p.cid, null, false);
     const n = mergeInto(c, p.results, p.projects);
@@ -1543,6 +1637,7 @@ async function applyPacket(p){
     list.forEach((s, i) => { const r = p.rows[i]; if (!r) return;
       if (r.tS != null) L.fixedS[s.id] = r.tS; if (r.tB != null) L.fixedB[s.id] = r.tB;
       if (r.aS) L.adjust[s.id] = r.aS; if (r.aB) L.adjustB[s.id] = r.aB; if (r.att) L.att[s.id] = r.att; s.grp = r.grp || 0; });
+    ROOT.seance = { cid: S.id, n: p.settings.current, at: now() };
     save(); toast(`✓ ${className()} · leçon ${p.settings.current} reçue`, 3000);
     return 'continue';
   }
@@ -1565,12 +1660,70 @@ function BR(u){ let i = 0; return {
   u32(){ const v = ((u[i]<<24)>>>0) + (u[i+1]<<16) + (u[i+2]<<8) + u[i+3]; i += 4; return v; },
   id(){ let t = ''; for (let k = 0; k < 4; k++) t += String.fromCharCode(u[i++]); return t.trim(); },
   str(long=false){ const n = long ? this.u16() : u[i++]; const t = new TextDecoder().decode(u.slice(i, i+n)); i += n; return t; },
+  pos(){ return i; }, skip(n){ i += n; },
   end(){ return i >= u.length; } }; }
 function listHash(ids){ let h = 0x811c9dc5; for (const c of ids.join(',')) { h ^= c.charCodeAt(0); h = Math.imul(h, 16777619) >>> 0; } return h >>> 0; }
 const GIDX = k => { const i = COLORS.findIndex(c => c.k === k); return i < 0 ? 0 : i + 1; };
 const GKEY = i => i ? COLORS[i-1]?.k || null : null;
 const NUL = 255, nv = v => v == null ? NUL : Math.max(0, Math.min(254, v)), vn = v => v === NUL ? null : v;
 
+/* ---------------------------------------------------------------------
+   QR « Séance » (enseignant → tablettes élèves) : élèves + leçon (+ bilan pour le projet de l'évaluation finale)
+   Les données ne changent pas : ce QR regroupe simplement les QR « Élèves » et « Leçon ».
+   --------------------------------------------------------------------- */
+function sumBytes(w, sid){                         // bilan compact pour le projet de l'élève (évaluation finale)
+  ['s','b'].forEach(a => { const g = suggest(sid, a);
+    if (!g) { w.u8(0); return; }
+    w.u8(1); w.u8(g.best); w.u8(Math.round(g.moy * 10)); w.u8(g.rate == null ? 255 : Math.round(g.rate * 100));
+    w.u8(Math.max(0, Math.min(255, Math.round(g.trend * 10) + 128))); w.u8(g.prudente); w.u8(g.conseillee); w.u8(g.ambitieuse); w.u8(g.nbL); });
+  const F = finaleLesson(), fbs = [], fas = [], pains = new Set();
+  for (let n = 1; n <= S.settings.nbLessons; n++) { if (n === F || attOf(n, sid)) continue;
+    const fb = fbOf(n, sid), fa = res(n, sid)?.fa; if (fb) fbs.push(fb); if (fa) fas.push(fa); dlOf(n, sid).forEach(k => pains.add(k)); }
+  w.u8(fbs.length ? Math.round(avg(fbs) * 10) : 0); w.u8(fas.length ? Math.round(avg(fas) * 10) : 0); w.u32(zoneMask([...pains]));
+}
+function sumRead(r){
+  const o = {};
+  ['s','b'].forEach(a => { if (!r.u8()) return;
+    const best = r.u8(), moy = r.u8() / 10, rt = r.u8(), trend = (r.u8() - 128) / 10;
+    o[a] = { best, moy, rate: rt === 255 ? null : rt / 100, trend, prudente: r.u8(), conseillee: r.u8(), ambitieuse: r.u8(), nbL: r.u8() }; });
+  const fb = r.u8(), fa = r.u8(); o.fb = fb ? fb / 10 : null; o.fa = fa ? fa / 10 : null; o.dl = maskZones(r.u32());
+  return o;
+}
+function binSeance(n){
+  const cur = n || curLesson(), N = binNames(), L = binLesson(cur), list = sortedStudents(), withSum = isFinale(cur);
+  const w = BW(); w.u8('S'.charCodeAt(0)); w.u8(1);
+  w.u16(N.length); N.forEach(x => w.u8(x)); w.u16(L.length); L.forEach(x => w.u8(x));
+  w.u8(withSum ? 1 : 0);
+  if (withSum) list.forEach(s => sumBytes(w, s.id));
+  return w.bytes();
+}
+function seanceDecode(u, r){
+  const nN = r.u16(), N = u.slice(r.pos(), r.pos() + nN); r.skip(nN);
+  const nL = r.u16(), L = u.slice(r.pos(), r.pos() + nL); r.skip(nL);
+  const names = binDecode(N), les = binDecode(L);
+  let sums = null;
+  if (r.u8()) { sums = []; for (let i = 0; i < names.students.length; i++) sums.push(sumRead(r)); }
+  return { k:'seance', names, lesson: les, sums };
+}
+async function applySeance(p){
+  const c = targetClass(p.names.cid, p.names.className, true);
+  useClass(c.id);
+  S.students = p.names.students.map(s => ({ id:s.id, disp:s.disp, grp:s.grp||0 }));
+  if (p.names.className) S.settings.className = p.names.className;
+  if (p.names.nbGroups) { S.settings.nbGroups = p.names.nbGroups; S.settings.groupColors = p.names.groupColors; }
+  if (p.names.pin) ROOT.pin = p.names.pin;
+  save();
+  await applyPacket(p.lesson);
+  const L = lesson(p.lesson.settings.current);
+  L.sum = {};
+  if (p.sums) S.students.forEach((s, i) => { if (p.sums[i]) L.sum[s.id] = p.sums[i]; });
+  ROOT.seance = { cid: S.id, n: p.lesson.settings.current, at: now() };
+  save(); toast(`✓ Séance reçue : ${className()} · leçon ${p.lesson.settings.current}`, 3500);
+  UI.filter = null; go('home');
+  return 'done';
+}
+/* bilan reçu (tablette élève) quand l'historique n'est pas sur la tablette */
+const sumOf = sid => lesson(finaleLesson()).sum?.[sid] || null;
 function binNames(){
   const w = BW(); w.u8('N'.charCodeAt(0)); w.u8(3);
   w.id(S.id); w.str(S.settings.className, 60); w.str(ROOT.pin, 8);
@@ -1641,6 +1794,7 @@ function binDecode(u){
     const [nbLessons, current, baseCourses, baseTirs, plotsS, plotsB, ecartS, ecartB, nbC, nbT] = v;
     return { k:'lesson', cid, hash, groupColors, settings:{ nbLessons, current, baseCourses, baseTirs, plotsS, plotsB, ecartS, ecartB, ...bar, ...grp }, nbC, nbT, title, kind, rows, th, adv };
   }
+  if (t === 'S') return seanceDecode(u, r);
   if (t === 'R') {
     const from = r.id(), cid = ver >= 2 ? r.id() : null, n = r.u16(), results = {}, projects = {};
     for (let i = 0; i < n; i++) { const sid = r.id(), les = r.u8(), ts = r.u32()*1000;
@@ -1892,7 +2046,7 @@ async function startScan(container, expectType, onDone){
       const pt = parsePart(txt);
       if (!pt) { msg.textContent = 'QR non reconnu (ce n\'est pas un QR de l\'appli Biathlon).'; continue; }
       const okTypes = [].concat(expectType || []);
-      if (okTypes.length && !okTypes.includes(pt.type)) { msg.textContent = pt.type === 'R' ? 'QR de saisies (tablette) : à scanner par l\'enseignant.' : 'QR de l\'enseignant : à scanner sur les tablettes.'; continue; }
+      if (okTypes.length && !okTypes.includes(pt.type)) { msg.textContent = okTypes.includes('R') ? 'Ce QR est destiné aux tablettes élèves (📷 Scanner la séance).' : 'Ce QR est destiné à la tablette enseignant (📥 Récupérer les saisies).'; continue; }
       if (pt.id === me.doneId) continue;            // QR déjà traité (encore devant la caméra)
       if (me.id !== pt.id) { me.id = pt.id; me.parts = {}; me.n = pt.n; }
       if (!me.parts[pt.i]) { me.parts[pt.i] = pt.data; if (navigator.vibrate) navigator.vibrate(40); }
@@ -2005,11 +2159,11 @@ async function afterSend(){
   showQRSeries(chunkQR(payload, 'R', 260), area, '');
 }
 function viewReceive(){
-  return `<div class="card strong center"><b style="font-size:20px">Élèves · Leçon · Saisies</b></div>
+  return `<div class="card strong center"><b style="font-size:20px">📷 Scanne le QR de la séance affiché par l'enseignant</b></div>
     <div id="scan-area"></div>
     <div class="btn-row" style="justify-content:center;margin-top:12px"><label class="btn">📂 Importer un fichier (.json)<input type="file" id="file-sync" accept=".json,application/json" hidden></label></div>`;
 }
-function afterReceive(){ startScan($('#scan-area'), null, async p => { const r = await applyPacket(p); return (p.k === 'res' || r === 'continue') ? 'continue' : r; }); }
+function afterReceive(){ startScan($('#scan-area'), ['S','N','L'], async p => { const r = await applyPacket(p); return r === 'continue' ? 'continue' : r; }); }
 
 async function downloadJSON(obj, name){
   const blob = new Blob([JSON.stringify(obj)], { type:'application/json' });
@@ -2043,7 +2197,15 @@ async function importSyncFile(file){
 const A = {
   go: d => go(d.view),
   openProf: () => openProf(),
-  profTab: d => { UI.profTab = d.tab; UI.sel = null; render(); window.scrollTo(0,0); },
+  profTab: d => { UI.sel = null; UI.profTab = d.tab;
+    if (PREDIR[d.tab]) { if (d.tab === 'saisieP') UI.filter = null; return go(PREDIR[d.tab]); }
+    UI.view = 'prof'; render(); window.scrollTo(0,0); },
+  lockProf: () => { UI.profUnlocked = false; UI.profTab = 'menu'; go('home'); },
+  setRole: d => {
+    if (d.r === 'prof') return pinPad(() => { ROOT.role = 'prof'; UI.profUnlocked = true; UI.profTab = 'menu'; save(); go('prof'); });
+    const doIt = () => { ROOT.role = 'eleve'; UI.profUnlocked = false; save(); go('home'); toast('🧒 Tablette élève'); };
+    if (ROOT.role === 'prof') confirmBox('Passer en tablette élève ?', 'Les données restent sur la tablette. Pour revenir : ⚙️ Enseignant + code.', 'Passer en élève').then(ok => ok && doIt()); else doIt(); },
+  switchRole: () => pinPad(() => { ROOT.role = 'prof'; UI.profUnlocked = true; UI.profTab = 'menu'; save(); go('prof'); }, '🔒 Code enseignant · passer en tablette enseignant'),
   filter: d => { UI.filter = d.g ? +d.g : null; render(); },
   goSaisie: () => { UI.filter = null; go('saisie'); },
   well: d => { const n = curLesson(), sid = UI.sid, v = +d.v; setRes(n, sid, r => { r[d.f] = r[d.f] === v ? null : v; }); render(); flagSaved(); },

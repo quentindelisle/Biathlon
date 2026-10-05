@@ -443,3 +443,14 @@ select[disabled]{opacity:.7}
 .th-item .row .th-name{flex:1 1 auto;min-width:0;width:auto}
 .th-item .row select{flex:0 0 auto;width:auto}
 .th-item .row .btn{flex:0 0 auto}
+
+/* Rôles : tablette enseignant / tablette élève */
+.home-grid.two{grid-template-columns:1fr 1fr}
+.home-grid.one{grid-template-columns:1fr;max-width:480px}
+.home-grid.steps{grid-template-columns:repeat(auto-fit,minmax(200px,1fr))}
+.home-btn small{font-size:15px;font-weight:700;opacity:.9}
+.home-btn.scan{background:var(--orange)} .home-btn.send{background:#0B4F1C}
+.home-btn:disabled{opacity:.35;cursor:not-allowed}
+.pm-btn{position:relative}
+.pm-btn .step{position:absolute;left:12px;top:10px;width:34px;height:34px;border-radius:50%;background:var(--orange);color:#fff;font-size:20px;display:flex;align-items:center;justify-content:center}
+@media (max-width:640px){ .home-grid.two{grid-template-columns:1fr} }
