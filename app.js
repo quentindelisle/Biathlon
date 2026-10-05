@@ -10,7 +10,7 @@
    ===================================================================== */
 'use strict';
 
-const APP_VERSION = '8.3.0';
+const APP_VERSION = '8.3.1';
 const STORE_KEY = 'neps_biathlon5s_v2';
 const QR_CHUNK = 440;           // caractères base45 par QR (QR version 11 max : facile à lire par une caméra)
 
@@ -2074,7 +2074,7 @@ function parsePart(txt){
 /* Affichage d'une série de QR (défilement automatique) */
 let qrTimer = null;
 function showQRSeries(parts, container, title){
-  let i = 0, auto = parts.length > 1, speed = 2000;
+  let i = 0, auto = parts.length > 1, speed = 1000;          // 1 QR par seconde (la série tourne en boucle)
   const imgs = parts.map(qrDataURL);
   const draw = () => {
     container.innerHTML = `<div class="qr-box">
