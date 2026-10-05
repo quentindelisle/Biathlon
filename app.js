@@ -10,7 +10,7 @@
    ===================================================================== */
 'use strict';
 
-const APP_VERSION = '8.1.1';
+const APP_VERSION = '8.2.0';
 const STORE_KEY = 'neps_biathlon5s_v2';
 const QR_CHUNK = 440;           // caractères base45 par QR (QR version 11 max : facile à lire par une caméra)
 
@@ -192,6 +192,12 @@ function lesson(n){
   if (L.source == null || L.source === 'test') L.source = (L.source === 'test' && n === 2) ? 1 : 'prev';   // reprise des anciennes données
   if (L.calc == null) L.calc = 'max';
   ['manual','adjust','manualB','adjustB','att','grpOv'].forEach(k => { L[k] = L[k] || {}; });
+  if (L.kind === 'theme') {                                  // ancienne version : un seul « thème » par leçon
+    const th = L.th, a = th && th.a === 'b' ? 'b' : 's';
+    L.pil = { s: null, b: null, [a]: th || '?' };
+    if (th && a === 'b') Object.values(S.results[n] || {}).forEach(r => { if (r.ob) { r.obB = r.ob; delete r.ob; } });
+    delete L.kind; delete L.th; L.adv = {};
+  }
   return L;
 }
 const curLesson = () => Math.min(S.settings.current || 1, S.settings.nbLessons);
@@ -217,10 +223,10 @@ const avg = a => a.length ? a.reduce((x,y)=>x+y,0)/a.length : null;
 const clampT = (a, v) => v == null ? null : Math.max(1, Math.min(maxPlots(a), Math.round(v)));
 const hasSource = n => typeof lesson(n).source === 'number' && lesson(n).source < n;
 /* Nature de la leçon */
-const KINDS = { manuel:'Remplissage manuel', diag:'Évaluation diagnostique', inter:'Diagnostic intermédiaire', finale:'Évaluation finale', theme:'Thème de leçon' };
+const KINDS = { manuel:'Remplissage manuel', diag:'Évaluation diagnostique', inter:'Bats Ta Performance !', finale:'Évaluation finale', theme:'Pilier' };
 const KIND_IDX = ['manuel','diag','inter','finale','theme'];
 const kindOf = n => lesson(n).kind || 'manuel';
-const lessonTitle = n => kindOf(n) === 'manuel' ? (lesson(n).title || '') : kindOf(n) === 'theme' ? (lesson(n).th ? 'Thème : ' + lesson(n).th.n : 'Thème à choisir') : KINDS[kindOf(n)];
+const lessonTitle = n => kindOf(n) === 'manuel' ? (lesson(n).title || pilTitle(n)) : KINDS[kindOf(n)];
 /* Dernière leçon (avant n) d'une nature donnée */
 function lastKind(kind, n){ for (let k = n - 1; k >= 1; k--) if (kindOf(k) === kind) return k; return null; }
 const isFinale = n => kindOf(n) === 'finale';
@@ -371,7 +377,7 @@ function render(){
   else if (v === 'projet') { if (prof) UI.profTab = 'projetP'; setTop('Projet de l\'élève', 'Évaluation finale', prof ? menuBtn : homeBtn); m.innerHTML = head('bilans') + viewProjetTiles(); }
   else if (v === 'projetDetail') { setTop('Projet · ' + nameOf(UI.sid), '', `<button class="btn small" data-action="go" data-view="projet">▦ Élèves</button>`); m.innerHTML = viewProjetDetail(); }
   else if (v === 'statsDetail') { setTop('Stats · ' + nameOf(UI.sid), '', `<button class="btn small" data-action="go" data-view="stats">▦ Élèves</button>`); m.innerHTML = viewStatsDetail(); }
-  else if (v === 'prof') { setTop('Espace enseignant', lessonLabel(curLesson()), `<button class="btn small" data-action="lockProf">🔒 Verrouiller</button>`); m.innerHTML = viewProf(); afterProf(); }
+  else if (v === 'prof') { setTop('Espace enseignant', lessonLabel(curLesson()), `<button class="btn small" data-action="toEleve" title="Passer en espace élève">🧒</button> <button class="btn small" data-action="lockProf">🔒 Verrouiller</button>`); m.innerHTML = viewProf(); afterProf(); }
   else if (v === 'send') { setTop('Envoyer mes saisies', 'QR code à scanner par l\'enseignant', homeBtn); m.innerHTML = viewSend(); afterSend(); }
   else if (v === 'receive') { setTop('Scanner la séance', 'QR affiché par l\'enseignant', homeBtn); m.innerHTML = viewReceive(); afterReceive(); }
 }
@@ -474,8 +480,8 @@ function viewEntry(){
   let h = `<div class="entry-name">${band(sid)}<div class="who">${esc(nameOf(sid))}</div>
     <span class="saved" id="saved-flag"></span>
     <button class="btn" data-action="go" data-view="saisie" style="margin-left:auto">← Retour aux élèves</button></div>`;
-  const adv = themeAdvice(n, sid);
-  if (adv) h += `<div class="advice ${adv.cls} theme-adv">${adv.t}</div>`;
+  h += frStrip(sid);
+  ['s','b'].forEach(a => { const adv = themeAdvice(n, sid, a); if (adv) h += `<div class="advice ${adv.cls} theme-adv">${adv.t}</div>`; });
   ['s','b'].forEach(a => {
     const A_ = ACT[a], nb = nbAtt(n, a), p = perf(n, sid, a), t = targetInfo(n, sid, a).value, mx = maxPlots(a);
     if (!nb) return;
@@ -490,8 +496,9 @@ function viewEntry(){
         <button class="btn small ghost" data-action="dialClear" data-a="${a}" data-k="${k}">Effacer</button></div>`;
     }
     h += `</div></div></section>`;
-    if (lessonTheme(n)?.a === a) h += obsBlock(n, sid);
+    h += obsBlock(n, sid, a);
   });
+  h += frBlock(n, sid);
   h += wellBlock(n, sid, 'apres');
   h += `<div class="nav-bottom">
       <button class="btn" data-action="entry" data-sid="${prev?.id||''}" ${prev?'':'disabled'}>← ${prev?esc(nameOf(prev.id)):'Précédent'}</button>
@@ -556,33 +563,48 @@ const OBS = [null,
   { n:'Parfois', c:'#F07000', f:'#fff' },
   { n:'Souvent', c:'#86DC96', f:'#0A1633' },
   { n:'Toujours', c:'#0B4F1C', f:'#fff' }];
-const DEFAULT_THEMES = [
-  { id:'pdep', n:'Posture de départ', a:'s', cr:['Semi-vissé', 'Penché en avant', 'Rythme accéléré'] },
-  { id:'papp', n:'Premiers appuis', a:'s', cr:['Regard vers le bas', 'Penché en avant', 'Utilise ses bras'] },
-  { id:'mvit', n:'Maintien de la vitesse', a:'s', cr:['Se redresse', 'Regard en face', 'Court grand'] },
-  { id:'bras', n:'Action des bras', a:'s', cr:['Bras fléchis à 90°', "Bras d'avant en arrière (pas en croix)", 'Épaules relâchées'] },
-  { id:'fini', n:'Finir sa course', a:'s', cr:['Ne ralentit pas avant le signal', 'Garde la même foulée', 'Reste gainé'] },
-  { id:'arme', n:'Armé et poussée', a:'b', cr:['Ballon au-dessus du front', 'Coude sous le ballon', "Pousse vers le haut et l'avant"] },
-  { id:'traj', n:'Appuis et trajectoire', a:'b', cr:['Pieds écartés, stables', 'Fléchit puis pousse sur les jambes', 'Trajectoire en cloche'] },
+const DEFAULT_THEMES = [                 // « Piliers » (k:'t' = trajectoire à choisir parmi 4 dessins)
+  { id:'reag', n:'Réagir vite à un signal', a:'s', cr:['Jambe avant fléchie', '2 mains sur genoux avant', 'Regard devant'] },
+  { id:'drt', n:'Courir droit', a:'s', cr:['Regard devant', 'Commencer et finir dans le même couloir'] },
+  { id:'bras', n:'Utilisation des bras', a:'s', cr:['Angle coude bras à 90°', 'Bras en mouvement'] },
+  { id:'fin', n:'Finir la course', a:'s', cr:['Continuer sur son élan'] },
+  { id:'posl', n:'Position du lanceur', a:'b', cr:['De profil', 'Alignement épaule, ballon, pied arrière', 'Jambe arrière fléchie'] },
+  { id:'pous', n:'Pousser vite et fort', a:'b', cr:['Bras tendu en fin de lancer', 'Geste accéléré', 'La jambe arrière finit devant'] },
+  { id:'angl', n:"Angle d'envol", a:'b', k:'t', cr:['Trajectoire de la balle'] },
 ];
+const THEMES_V = 3;                      // v3 : piliers (remplacent les anciens thèmes)
+/* Angle d'envol : 4 trajectoires (de maîtrise insuffisante à très bonne maîtrise) */
+const TRAJ = [null,
+  { n:'Tir tendu vers le sol', d:'M8 14 L104 58', arrow:true },
+  { n:'Cloche haute et courte', d:'M14 62 Q50 -30 86 62' },
+  { n:'Arc tendu', d:'M8 50 Q60 6 112 50' },
+  { n:'Grande cloche', d:'M8 62 Q56 -16 112 46' }];
+const trajSVG = (v, w=120) => `<svg viewBox="0 0 120 70" width="${w}" height="${Math.round(w*70/120)}" class="traj-svg"><line x1="2" y1="66" x2="118" y2="66" stroke="#9AA3B5" stroke-width="2"/>
+  <path d="${TRAJ[v].d}" fill="none" stroke="#0A1633" stroke-width="5" stroke-linecap="round"/>${TRAJ[v].arrow ? '<path d="M104 58 l-12 -1 l7 -9 z" fill="#0A1633"/>' : ''}</svg>`;
+const isTraj = th => !!(th && th.k === 't');
+const obsName = (v, th) => isTraj(th) ? TRAJ[v].n : OBS[v].n;
 const MAX_CR = 5;
-function themes(){ if (!ROOT.themes) ROOT.themes = DEFAULT_THEMES.map(t => ({ ...t, cr:[...t.cr] })); return ROOT.themes; }
+function themes(){ if (!ROOT.themes || (ROOT.themesV || 1) < THEMES_V) { ROOT.themes = DEFAULT_THEMES.map(t => ({ ...t, cr:[...t.cr] })); ROOT.themesV = THEMES_V; } return ROOT.themes; }
 const themeById = id => themes().find(t => t.id === id);
-const snapTheme = t => t ? { id:t.id, n:t.n, a:t.a, cr:t.cr.filter(Boolean) } : null;
-const lessonTheme = n => kindOf(n) === 'theme' ? (lesson(n).th || null) : null;
-/* après modification d'un thème : mise à jour des leçons qui l'utilisent (toutes les classes) */
+const snapTheme = t => t ? { id:t.id, n:t.n, a:t.a, ...(t.k ? { k:t.k } : {}), cr:t.cr.filter(Boolean) } : null;
+/* Deux piliers par leçon : L.pil = { s: pilier sprint, b: pilier lancer } (objet, null, ou '?' = à choisir) */
+const lessonPil = (n, a) => { const v = lesson(n).pil?.[a]; return v && typeof v === 'object' ? v : null; };
+const pilTodo = (n, a) => lesson(n).pil?.[a] === '?';
+const obKey = a => a === 'b' ? 'obB' : 'ob';
+function pilTitle(n){ return ['s','b'].map(a => lessonPil(n, a) ? `${ACT[a].ico} ${lessonPil(n, a).n}` : pilTodo(n, a) ? `${ACT[a].ico} pilier à choisir` : '').filter(Boolean).join(' · '); }
+/* après modification d'un pilier : mise à jour des leçons qui l'utilisent (toutes les classes) */
 function refreshThemeSnapshots(id){
   const t = themeById(id);
-  Object.values(ROOT.classes).forEach(c => Object.values(c.lessons || {}).forEach(L => { if (L.kind === 'theme' && L.th && L.th.id === id) L.th = t ? snapTheme(t) : null; }));
+  Object.values(ROOT.classes).forEach(c => Object.values(c.lessons || {}).forEach(L => ['s','b'].forEach(a => { const v = L.pil?.[a]; if (v && typeof v === 'object' && v.id === id) L.pil[a] = t && t.a === a ? snapTheme(t) : null; })));
 }
 /* Forme avant / douleurs : notées par le prof pendant l'appel (anciennes données : saisies par l'élève) */
 const fbOf = (n, sid) => (lesson(n).wb?.[sid]?.fb) ?? res(n, sid)?.fb ?? null;
 const dlOf = (n, sid) => (lesson(n).wb?.[sid]?.dl) ?? res(n, sid)?.dl ?? [];
-const obsOf = (n, sid) => { const th = lessonTheme(n), r = res(n, sid); return th && r && r.ob && r.ob.some(v => v) ? r.ob : null; };
-/* Conseil : dernière leçon (avant n) sur le même thème, critère le moins réussi */
-function lastObs(n, sid){
-  const th = lessonTheme(n); if (!th) return null;
-  for (let k = n - 1; k >= 1; k--) { const t2 = lessonTheme(k); if (t2 && t2.id === th.id) { const ob = obsOf(k, sid); if (ob) return { k, ob, cr: t2.cr }; } }
+const obsOf = (n, sid, a) => { const th = lessonPil(n, a), r = res(n, sid), ob = r?.[obKey(a)]; return th && ob && ob.some(v => v) ? ob : null; };
+/* Conseil : dernière leçon (avant n) sur le même pilier, critère le moins réussi */
+function lastObs(n, sid, a){
+  const th = lessonPil(n, a); if (!th) return null;
+  for (let k = n - 1; k >= 1; k--) { const t2 = lessonPil(k, a); if (t2 && t2.id === th.id) { const ob = obsOf(k, sid, a); if (ob) return { k, ob, cr: t2.cr }; } }
   return null;
 }
 function pickAdvice(lo){
@@ -590,38 +612,44 @@ function pickAdvice(lo){
   let i = 0; lo.ob.forEach((x, j) => { if (x && (!lo.ob[i] || x < lo.ob[i])) i = j; });
   return lo.ob[i] ? { k: lo.k, i, v: lo.ob[i] } : null;
 }
-function themeAdvice(n, sid){
-  const th = lessonTheme(n); if (!th) return null;
-  const sent = lesson(n).adv?.[sid];                        // conseil calculé par le prof (reçu par QR)
+function themeAdvice(n, sid, a){
+  const th = lessonPil(n, a); if (!th) return null;
+  const sent = lesson(n).adv?.[a]?.[sid];                    // conseil calculé par le prof (reçu par QR)
   let k, i, v;
   if (sent) ({ k, i, v } = sent);
-  else { const p = pickAdvice(lastObs(n, sid)); if (!p) return null; ({ k, i, v } = p); }
+  else { const p = pickAdvice(lastObs(n, sid, a)); if (!p) return null; ({ k, i, v } = p); }
   const cr = th.cr[i]; if (!cr || !v) return null;
+  const P = `${ACT[a].ico} ${esc(th.n)} · `;
+  if (isTraj(th)) return v <= 2
+    ? { cls:'warn', t:`${P}💡 Rappelle-toi : la dernière fois (L${k}), ta trajectoire était « <b>${TRAJ[v].n.toLowerCase()}</b> ». Vise une grande cloche !` }
+    : { cls:'good', t:`${P}👍 La dernière fois (L${k}), ta trajectoire était « <b>${TRAJ[v].n.toLowerCase()}</b> ».${v < 4 ? ' Vise une grande cloche !' : ' Continue !'}` };
   return v <= 2
-    ? { cls:'warn', t:`💡 Rappelle-toi : la dernière fois (L${k}), « ${esc(cr)} » n'était pas assez souvent réussi (<b>${OBS[v].n.toLowerCase()}</b>). Concentre-toi dessus !` }
-    : { cls:'good', t:`👍 La dernière fois (L${k}), tes critères étaient réussis souvent ou toujours. Vise « toujours » pour « ${esc(cr)} » !` };
+    ? { cls:'warn', t:`${P}💡 Rappelle-toi : la dernière fois (L${k}), « ${esc(cr)} » n'était pas assez souvent réussi (<b>${OBS[v].n.toLowerCase()}</b>). Concentre-toi dessus !` }
+    : { cls:'good', t:`${P}👍 La dernière fois (L${k}), tes critères étaient réussis souvent ou toujours. Vise « toujours » pour « ${esc(cr)} » !` };
 }
-const obsChip = v => v ? `<span class="obs-chip" style="background:${OBS[v].c};color:${OBS[v].f}">${OBS[v].n}</span>` : '<span class="muted">—</span>';
-/* Bilan : critères observés, regroupés par thème */
+const obsChip = (v, th) => isTraj(th) && v ? `<span class="obs-traj" title="${TRAJ[v].n}">${trajSVG(v, 64)}<span class="obs-chip" style="background:${OBS[v].c};color:${OBS[v].f}">${TRAJ[v].n}</span></span>` : v ? `<span class="obs-chip" style="background:${OBS[v].c};color:${OBS[v].f}">${OBS[v].n}</span>` : '<span class="muted">—</span>';
+/* Bilan : critères observés, regroupés par pilier */
 function obsBilan(sid){
   const byTh = {};
-  for (let n = 1; n <= S.settings.nbLessons; n++) { const th = lessonTheme(n); if (!th) continue;
-    (byTh[th.id] = byTh[th.id] || { th, ls: [] }).ls.push({ n, ob: obsOf(n, sid), at: attOf(n, sid) }); }
+  for (let n = 1; n <= S.settings.nbLessons; n++) ['s','b'].forEach(a => { const th = lessonPil(n, a); if (!th) return;
+    (byTh[a + th.id] = byTh[a + th.id] || { th, a, ls: [] }).ls.push({ n, ob: obsOf(n, sid, a), at: attOf(n, sid) }); });
   const list = Object.values(byTh); if (!list.length) return '';
-  return list.map(({ th, ls }) => `<div class="obs-bilan"><h3>${ACT[th.a].ico} ${esc(th.n)}</h3>
+  return list.map(({ th, a, ls }) => `<div class="obs-bilan"><h3>${ACT[a].ico} ${esc(th.n)}</h3>
     <div class="pj-table-wrap"><table class="pj-table"><tr><th>Critère</th>${ls.map(x => `<th>L${x.n}</th>`).join('')}</tr>
-    ${th.cr.map((c, i) => `<tr><td><b>${esc(c)}</b></td>${ls.map(x => `<td class="c">${x.at ? `<span class="tag ${x.at==='abs'?'abs':'inapte'}">${x.at==='abs'?'Abs.':'Inapte'}</span>` : obsChip(x.ob?.[i])}</td>`).join('')}</tr>`).join('')}</table></div></div>`).join('');
+    ${th.cr.map((c, i) => `<tr><td><b>${esc(c)}</b></td>${ls.map(x => `<td class="c">${x.at ? `<span class="tag ${x.at==='abs'?'abs':'inapte'}">${x.at==='abs'?'Abs.':'Inapte'}</span>` : obsChip(x.ob?.[i], th)}</td>`).join('')}</tr>`).join('')}</table></div></div>`).join('');
 }
-/* Bloc de la fiche de saisie : à observer pendant les courses, puis Toujours / Souvent / Parfois / Jamais */
-function obsBlock(n, sid){
-  const th = lessonTheme(n); if (!th || !th.cr.length) return '';
-  const a = th.a, nb = nbAtt(n, a), done = vals(perf(n, sid, a)).length >= nb, ob = res(n, sid)?.ob || [];
-  if (!done) return `<section class="obs-sec"><h2>👀 ${esc(th.n)} · à observer pendant les ${ACT[a].word}s</h2>
-    <div class="obs-todo">${th.cr.map(c => `<span>${esc(c)}</span>`).join('')}</div>
+/* Bloc de la fiche de saisie : à observer pendant les courses / tirs, puis Toujours / Souvent / Parfois / Jamais (ou trajectoire) */
+function obsBlock(n, sid, a){
+  const th = lessonPil(n, a); if (!th || !th.cr.length) return '';
+  const nb = nbAtt(n, a), done = vals(perf(n, sid, a)).length >= nb, ob = res(n, sid)?.[obKey(a)] || [];
+  if (!done) return `<section class="obs-sec"><h2>👀 ${ACT[a].ico} ${esc(th.n)} · à observer pendant les ${ACT[a].word}s</h2>
+    <div class="obs-todo">${isTraj(th) ? [1,2,3,4].map(v => `<span class="obs-traj">${trajSVG(v, 70)}</span>`).join('') : th.cr.map(c => `<span>${esc(c)}</span>`).join('')}</div>
     <div class="muted" style="font-weight:700">Les critères se remplissent après ${a==='s'?'la dernière course':'le dernier tir'}.</div></section>`;
-  return `<section class="obs-sec on"><h2>👀 ${esc(th.n)} · ce que l'observateur a vu</h2>
+  if (isTraj(th)) return `<section class="obs-sec on"><h2>👀 ${ACT[a].ico} ${esc(th.n)} · quelle trajectoire de balle ?</h2>
+    <div class="traj-btns">${[1,2,3,4].map(v => `<button class="trbtn ${ob[0]===v?'on':''}" style="--cc:${OBS[v].c}" data-action="obs" data-a="${a}" data-i="0" data-v="${v}">${trajSVG(v, 150)}<span>${TRAJ[v].n}</span></button>`).join('')}</div></section>`;
+  return `<section class="obs-sec on"><h2>👀 ${ACT[a].ico} ${esc(th.n)} · ce que l'observateur a vu</h2>
     ${th.cr.map((c, i) => `<div class="obs-row"><div class="obs-c">${esc(c)}</div><div class="obs-btns">${[4,3,2,1].map(v =>
-      `<button class="obtn ${ob[i]===v?'on':''}" style="--cc:${OBS[v].c};--cf:${OBS[v].f}" data-action="obs" data-i="${i}" data-v="${v}">${OBS[v].n}</button>`).join('')}</div></div>`).join('')}</section>`;
+      `<button class="obtn ${ob[i]===v?'on':''}" style="--cc:${OBS[v].c};--cf:${OBS[v].f}" data-action="obs" data-a="${a}" data-i="${i}" data-v="${v}">${OBS[v].n}</button>`).join('')}</div></div>`).join('')}</section>`;
 }
 /* Forme + douleurs pendant l'appel (prof) */
 function appelWellModal(sid){
@@ -647,16 +675,17 @@ function appelWellModal(sid){
 /* Banque de thèmes (Paramètres du cycle) */
 function profThemes(full){
   const T = themes(), open = full || UI.thOpen;
-  const used = id => Object.values(S.lessons).some(L => L.kind === 'theme' && L.th && L.th.id === id);
-  return `<div class="card compact"><div class="row"><h2 class="grow" style="margin:0">📚 Thèmes de leçon <span class="muted">· ${T.length}</span></h2>
+  const used = id => Object.values(S.lessons).some(L => ['s','b'].some(a => L.pil?.[a]?.id === id));
+  return `<div class="card compact"><div class="row"><h2 class="grow" style="margin:0">🏛 Piliers <span class="muted">· ${T.length}</span></h2>
       ${full ? '' : `<button class="btn small" data-action="thToggle">${UI.thOpen ? 'Masquer' : 'Afficher / modifier'}</button>`}</div>
     ${open ? `<div class="th-list">${T.map(t => `<div class="th-item">
-        <div class="row"><input type="text" class="grow th-name" data-field="thName" data-id="${t.id}" value="${esc(t.n)}" placeholder="Nom du thème">
+        <div class="row"><input type="text" class="grow th-name" data-field="thName" data-id="${t.id}" value="${esc(t.n)}" placeholder="Nom du pilier">
           <select data-field="thAct" data-id="${t.id}"><option value="s" ${t.a==='s'?'selected':''}>🏃 Course</option><option value="b" ${t.a==='b'?'selected':''}>🏀 Lancer</option></select>
+          <select data-field="thKind" data-id="${t.id}"><option value="" ${!t.k?'selected':''}>Toujours / Souvent / Parfois / Jamais</option><option value="t" ${t.k==='t'?'selected':''}>Trajectoire (4 dessins)</option></select>
           <button class="btn small red" data-action="thDel" data-id="${t.id}">🗑</button></div>
-        <div class="th-cr">${Array.from({length:MAX_CR}, (_, i) => `<input type="text" data-field="thCr" data-id="${t.id}" data-i="${i}" value="${esc(t.cr[i]||'')}" placeholder="Critère ${i+1}${i>=2?' (facultatif)':''}">`).join('')}</div>
+        ${t.k === 't' ? `<div class="obs-todo" style="margin-top:8px">${[1,2,3,4].map(v => `<span class="obs-traj">${trajSVG(v, 70)} ${TRAJ[v].n}</span>`).join('')}</div>` : `<div class="th-cr">${Array.from({length:MAX_CR}, (_, i) => `<input type="text" data-field="thCr" data-id="${t.id}" data-i="${i}" value="${esc(t.cr[i]||'')}" placeholder="Critère ${i+1}${i>=1?' (facultatif)':''}">`).join('')}</div>`}
         ${used(t.id) ? '<div class="muted" style="font-size:13px;font-weight:700">Utilisé dans ce cycle</div>' : ''}</div>`).join('')}</div>
-      <button class="btn green" data-action="thAdd" style="margin-top:10px">＋ Nouveau thème</button>` : `<div class="muted" style="font-weight:700;margin-top:6px">${T.map(t => `${ACT[t.a].ico} ${esc(t.n)}`).join(' · ')}</div>`}</div>`;
+      <button class="btn green" data-action="thAdd" style="margin-top:10px">＋ Nouveau pilier</button>` : `<div class="muted" style="font-weight:700;margin-top:6px">${T.map(t => `${ACT[t.a].ico} ${esc(t.n)}`).join(' · ')}</div>`}</div>`;
 }
 /* =====================================================================
    Forme, douleurs · projet de l'élève 
@@ -771,14 +800,15 @@ function makeTestClass(){
   Object.assign(st, { nbLessons:7, baseCourses:6, baseTirs:6, timeS:6, plotsS:8, plotsB:8, firstS:15, firstB:4, stepB:2, nbGroups:NB_GROUPS, current:6 });
   ROSTER.forEach(([nom, prenom]) => S.students.push({ id:newStudentId(), nom, prenom, grp: 0 }));
   [...S.students].sort(() => Math.random() - .5).forEach((s, i) => s.grp = (i % NB_GROUPS) + 1);   // répartition aléatoire équilibrée (4 ou 3 par groupe)
-  /* L1 diag · L2 Posture de départ · L3 Premiers appuis · L4 diag intermédiaire · L5 Maintien de la vitesse · L6 thème à choisir · L7 évaluation du projet */
-  const plan = { 1:['diag'], 2:['theme','pdep'], 3:['theme','papp'], 4:['inter'], 5:['theme','mvit'], 6:['theme', null], 7:['finale'] };
-  for (let n = 1; n <= 7; n++) { const L = lesson(n), [k, th] = plan[n]; L.kind = k; L.title = '';
-    if (k === 'theme') L.th = th ? snapTheme(themeById(th) || DEFAULT_THEMES.find(t => t.id === th)) : null;
+  /* L1 diag · L2-L3-L5 : un pilier sprint + un pilier lancer · L4 Bats Ta Performance ! · L6 piliers à choisir · L7 évaluation du projet */
+  const plan = { 1:['diag'], 2:['manuel','reag','posl'], 3:['manuel','drt','pous'], 4:['inter'], 5:['manuel','bras','angl'], 6:['manuel','?','?'], 7:['finale'] };
+  const snap = id => id === '?' ? '?' : id ? snapTheme(themeById(id) || DEFAULT_THEMES.find(t => t.id === id)) : null;
+  for (let n = 1; n <= 7; n++) { const L = lesson(n), [k, ps, pb] = plan[n]; L.kind = k === 'manuel' ? undefined : k; L.title = '';
+    L.pil = { s: snap(ps), b: snap(pb) };
     L.source = n === 1 || n === 4 ? 'none' : n === 7 ? 'projet' : n < 4 ? 'diag' : 'inter'; }
   const zones = ZONES.map(z => z.k);
   S.students.forEach(s => {
-    const lvS = 2 + Math.random() * 3.5, lvB = 2 + Math.random() * 3.5, prog = .15 + Math.random() * .35, moral = R(4, 8), motr = 1.3 + Math.random() * 2.2;
+    const lvS = 2 + Math.random() * 3.5, lvB = 2 + Math.random() * 3.5, prog = .15 + Math.random() * .35, moral = R(4, 8), motr = 1.3 + Math.random() * 2.2, invest = 6.5 + Math.random() * 4.5;
     for (let n = 1; n <= 5; n++) {
       const L = lesson(n), x = Math.random();
       if (x < .05) { L.att[s.id] = 'abs'; continue; }
@@ -789,8 +819,9 @@ function makeTestClass(){
       S.results[n] = S.results[n] || {};
       const r = { c: Array.from({length:6}, () => lv(lvS)), b: Array.from({length:6}, () => lv(lvB)),
         fa: Math.max(1, Math.min(10, fb + R(-3, 1))), ts: now() - (7 - n) * 7 * 864e5, d: 'test' };
-      const th = L.kind === 'theme' && L.th;
-      if (th) { r.ob = th.cr.map(() => Math.max(1, Math.min(4, Math.round(motr + n * .12 + Math.random() * 1.6 - .8)))); r.oth = th.id; }
+      ['s','b'].forEach(a => { const th = lessonPil(n, a);
+        if (th) r[obKey(a)] = th.cr.map(() => Math.max(1, Math.min(4, Math.round(motr + n * .12 + Math.random() * 1.6 - .8)))); });
+      r.nc = Math.max(6, Math.min(11, Math.round(invest + Math.random() * 2 - 1)));
       S.results[n][s.id] = r;
     }
   });
@@ -836,12 +867,12 @@ function viewProjetDetail(){
       return `<div class="pj-sc">${t!=null?`<span class="pj-t">🎯${t}</span>`:''}${v.map(x => `<span class="sc ${scoreCls(x, t)}">${x ?? '—'}</span>`).join('')}</div>`; };
     const wv = v => v ? `<span class="wv" style="background:${scaleColor(v)};color:${v>=5&&v<=7?'#0A1633':'#fff'}">${v}</span>` : '<span class="muted">—</span>';
     rows += `<tr><td><b>L${n}</b><div class="ls-title">${esc(lessonTitle(n))}</div>${at==='abs'?'<span class="tag abs">Absent</span>':at==='inap'?'<span class="tag inapte">Inapte</span>':''}</td>
-      <td>${cell('s')}</td><td>${cell('b')}</td><td class="c">${wv(fb)}</td><td>${dl.map(zoneName).join(', ') || '—'}</td><td class="c">${wv(r.fa)}</td></tr>`;
+      <td>${cell('s')}</td><td>${cell('b')}</td><td class="c">${wv(fb)}</td><td>${dl.map(zoneName).join(', ') || '—'}</td><td class="c">${wv(r.fa)}</td><td class="c">${at ? '' : (f => f ? `${compDot(f.lv, null, true)}<div style="font-size:12px">${f.nc != null ? esc(ncName(f.nc)) : ''}</div>` : '—')(frLesson(n, sid))}</td></tr>`;
   }
   const sum = a => { const g = suggest(sid, a); if (!g) return `<div class="muted">Pas encore de données</div>`;
     return `<div class="pj-sum">Meilleure perf : <b>${pts(g.best)}</b> · Moyenne récente : <b>${fmt(g.moy)}</b> · Cible réussie : <b>${g.rate!=null?Math.round(g.rate*100)+' %':'—'}</b> des tentatives ·
       ${g.trend >= 0.5 ? '📈 en progrès' : g.trend <= -0.5 ? '📉 en baisse' : '➡️ stable'}</div>`; };
-  const SM = !isProfRole() ? sumOf(sid) : null;   // tablette élève : bilan complet reçu avec la séance
+  const SM = !isProfRole() && !rows ? sumOf(sid) : null;   // tablette élève sans historique : bilan reçu avec la séance
   if (SM) { fbs.length = 0; fas.length = 0; Object.keys(painCount).forEach(k => delete painCount[k]); rows = '';
     if (SM.fb) fbs.push(SM.fb); if (SM.fa) fas.push(SM.fa); (SM.dl || []).forEach(k => painCount[k] = 1); }
   const pains = Object.entries(painCount).sort((a,b)=>b[1]-a[1]);
@@ -855,7 +886,7 @@ function viewProjetDetail(){
   return `<div class="entry-name">${band(sid)}<div class="who">${esc(nameOf(sid))}</div><span class="muted" style="font-weight:800">Projet · évaluation finale (L${F})</span>
       <button class="btn" data-action="go" data-view="projet" style="margin-left:auto">← Retour aux élèves</button></div>
     ${!rows && !isProfRole() ? '' : `<div class="card strong compact"><h2>📋 Mon bilan, leçon par leçon</h2>
-      <div class="pj-table-wrap"><table class="pj-table"><tr><th>Leçon</th><th>🏃 Sprint</th><th>🏀 Tir</th><th>💪 Forme avant</th><th>🩹 Douleurs</th><th>😮‍💨 Forme après</th></tr>${rows || '<tr><td colspan="6" class="muted">Pas encore de données</td></tr>'}</table></div></div>`}
+      <div class="pj-table-wrap"><table class="pj-table"><tr><th>Leçon</th><th>🏃 Sprint</th><th>🏀 Tir</th><th>💪 Forme avant</th><th>🩹 Douleurs</th><th>😮‍💨 Forme après</th><th>🔴 Fil rouge</th></tr>${rows || '<tr><td colspan="7" class="muted">Pas encore de données</td></tr>'}</table></div></div>`}
     ${obsBilan(sid) ? `<div class="card strong compact"><h2>👀 Mes critères observés</h2>${obsBilan(sid)}</div>` : ''}
     <div class="card strong compact"><h2>🔎 En résumé</h2>
       <div><b>🏃 Sprint</b> ${sum('s')}</div><div style="margin-top:6px"><b>🏀 Tir</b> ${sum('b')}</div>
@@ -990,19 +1021,65 @@ function d4Suggest(sid){
 const compDot = (lv, sug, big) => lv ? `<span class="cdot ${big?'big':''}" style="background:${COMP_LV[lv].c};color:${COMP_LV[lv].f}" title="${COMP_LV[lv].n}"></span>`
   : sug ? `<span class="cdot sug ${big?'big':''}" style="border-color:${COMP_LV[sug].c};background:${COMP_LV[sug].c}55" title="Proposé : ${COMP_LV[sug].n}"></span>`
   : `<span class="cdot none ${big?'big':''}" title="Non évalué"></span>`;
+/* ---------------------------------------------------------------------
+   Fil rouge : l'investissement (nombre de courses × écart à la cible en sprint), évalué à chaque leçon
+   --------------------------------------------------------------------- */
+const NC = [[6,'6 ou moins'],[7,'7'],[8,'8'],[9,'9'],[10,'10'],[11,'Plus de 10']];
+const ncName = v => (NC.find(x => x[0] === v) || [0, '—'])[1];
+const FR_Q = nc => nc >= 10 ? 4 : nc === 9 ? 3 : nc >= 7 ? 2 : 1;                 // quantité
+const FR_E = e => e <= 0.5 ? 4 : e <= 1.5 ? 3 : e <= 2.5 ? 2 : 1;                   // qualité (écart sous la cible)
+function frLesson(n, sid){
+  if (attOf(n, sid)) return null;
+  const r = res(n, sid) || {}, v = vals(r.c || []), nc = r.nc ?? null;
+  if (!v.length && nc == null) return null;
+  const t = targetInfo(n, sid, 's').value;
+  const ec = v.length && t != null ? Math.round(Math.max(0, t - avg(v)) * 10) / 10 : null;
+  if (nc == null) return { lv:null, nc, ec, why:'nombre de courses non renseigné' };
+  const q = FR_Q(nc), e = ec == null ? null : FR_E(ec), lv = e == null ? q : Math.min(q, e);
+  return { lv, nc, ec, why: `${nc <= 6 ? '6 courses ou moins' : nc >= 11 ? 'plus de 10 courses' : nc + ' courses'} · ${ec == null ? 'sans cible' : `écart à la cible ${fmt(ec)}`}` };
+}
+function frSuggest(sid){
+  const l = []; for (let n = 1; n <= S.settings.nbLessons; n++) { const f = frLesson(n, sid); if (f && f.lv) l.push(f.lv); }
+  return l.length ? Math.max(1, Math.min(4, Math.round(avg(l)))) : null;
+}
+const frMoy = sid => { const l = []; for (let n = 1; n <= S.settings.nbLessons; n++) { const f = frLesson(n, sid); if (f && f.lv) l.push(f.lv); } return l.length ? avg(l) : null; };
+/* bandeau « Mon fil rouge » (fiche de l'élève) */
+function frStrip(sid){
+  const N = S.settings.nbLessons, cur = curLesson();
+  let h = '';
+  for (let n = 1; n <= N; n++) { const f = frLesson(n, sid), at = attOf(n, sid);
+    if (n > cur) break;
+    h += `<span class="fr-l ${n === cur ? 'cur' : ''}" title="${f ? esc(f.why) : ''}"><small>L${n}</small>${at ? `<span class="tag ${at==='abs'?'abs':'inapte'}">${at==='abs'?'Abs.':'Inapte'}</span>` : compDot(f?.lv, null, true)}</span>`; }
+  const m = frMoy(sid);
+  return `<div class="fr-strip"><b>🔴 Mon fil rouge</b>${h}${m != null ? `<span class="fr-moy">Moyenne : ${compDot(Math.round(m), null, true)} ${COMP_LV[Math.round(m)].n}</span>` : ''}</div>`;
+}
+function frBlock(n, sid){
+  const nc = res(n, sid)?.nc ?? null;
+  return `<section class="obs-sec on fr-sec"><h2>🔴 Fil rouge · combien de courses ${esc(nameOf(sid))} a-t-il/elle faites pendant la leçon ?</h2>
+    <div class="obs-btns">${NC.map(([v, l]) => `<button class="obtn ${nc===v?'on':''}" style="--cc:#0A5BD3;--cf:#fff" data-action="nc" data-v="${v}">${l}</button>`).join('')}</div>
+    ${(f => f && f.lv ? `<div style="margin-top:8px;font-weight:800">${compDot(f.lv, null, true)} ${COMP_LV[f.lv].n} · ${esc(f.why)}</div>` : '')(frLesson(n, sid))}</section>`;
+}
 function profComp(){
   if (!S.students.length) return `<div class="card strong center">Aucun élève</div>`;
-  return `<div class="card strong compact"><h2>❤️ Compétence D4</h2>${classPicker()}
+  return `<div class="card strong compact"><h2>🎓 Compétences</h2>
+      <div class="comp-legend"><b>🔴 Fil rouge</b> · investissement : nombre de courses et écart à la cible, à chaque leçon. Couleur proposée = moyenne des leçons.</div>
       <div class="comp-legend"><b>D4</b> « ${esc(COMP_D.D4.t)} »<br><i>« ${esc(COMP_D.D4.s)} »</i></div>
       <div class="comp-legend">${[1,2,3,4].map(k => `${compDot(k)} ${COMP_LV[k].n}`).join(' · ')} · ${compDot(null, 3)} proposé par l'appli · ${compDot(null)} non évalué</div></div>
-    ${filterBar()}<div class="tiles">${sortedStudents().filter(passFilter).map(s => { const C = compOf(s.id), sug = d4Suggest(s.id);
-      return `<button class="tile ${C.D4 ? 'done' : ''}" data-action="compDetail" data-sid="${s.id}">${band(s.id)}${C.D4 ? '<span class="check">✓</span>' : ''}
+    ${filterBar()}<div class="tiles">${sortedStudents().filter(passFilter).map(s => { const C = compOf(s.id);
+      return `<button class="tile ${C.FR && C.D4 ? 'done' : ''}" data-action="compDetail" data-sid="${s.id}">${band(s.id)}${C.FR && C.D4 ? '<span class="check">✓</span>' : ''}
         <span class="name">${esc(nameOf(s.id))}</span>
-        <span class="comp-row"><span>D4 ${compDot(C.D4, sug)}</span><span class="muted" style="font-size:14px">${C.D4 ? COMP_LV[C.D4].n : sug ? 'proposé : ' + COMP_LV[sug].n : ''}</span></span></button>`; }).join('')}</div>`;
+        <span class="comp-row"><span>🔴 ${compDot(C.FR, frSuggest(s.id))}</span><span>D4 ${compDot(C.D4, d4Suggest(s.id))}</span></span></button>`; }).join('')}</div>`;
+}
+function compPick(k, title, sub, sug, aid){
+  const C = compOf(UI.sid);
+  return `<div class="comp-pick"><div class="comp-h">${title}</div>${sub ? `<div class="muted comp-s">${sub}</div>` : ''}
+      <div class="comp-aid">Proposition de l'appli : ${sug ? `${compDot(sug)} <b>${COMP_LV[sug].n}</b> (${aid})` : '<b>—</b> (pas assez de données)'}</div>
+      <div class="comp-btns">${[1,2,3,4].map(v => `<button class="cbtn ${C[k]===v?'on':''} ${sug===v&&!C[k]?'reco':''}" style="--cc:${COMP_LV[v].c};--cf:${COMP_LV[v].f}" data-action="compSet" data-k="${k}" data-v="${v}">${COMP_LV[v].n}</button>`).join('')}
+        ${C[k] ? `<button class="btn ghost xs" data-action="compSet" data-k="${k}" data-v="0">Effacer</button>` : ''}</div></div>`;
 }
 function profCompDetail(){
   const sid = UI.sid, s = student(sid); if (!s) return profComp();
-  const N = S.settings.nbLessons, C = compOf(sid), sug = d4Suggest(sid);
+  const N = S.settings.nbLessons, sug = d4Suggest(sid), fsug = frSuggest(sid), fm = frMoy(sid);
   const wv = v => v ? `<span class="wv" style="background:${scaleColor(v)};color:${v>=5&&v<=7?'#0A1633':'#fff'}">${v}</span>` : '<span class="muted">—</span>';
   const gap = a => n => { const v = vals(perf(n, sid, a)); if (!v.length) return '<span class="muted">—</span>';
     const t = targetInfo(n, sid, a).value; if (t == null) return `${fmt(avg(v))} <small class="muted">(sans cible)</small>`;
@@ -1010,29 +1087,33 @@ function profCompDetail(){
   let rows = '';
   for (let n = 1; n <= N; n++) {
     const at = attOf(n, sid), r = res(n, sid) || {}, fb = fbOf(n, sid), dl = dlOf(n, sid);
-    const has = vals(r.c).length || vals(r.b).length || fb || r.fa;
+    const has = vals(r.c).length || vals(r.b).length || fb || r.fa || r.nc != null;
     if (!has && !at) continue;
-    const d = d4Lesson(n, sid);
+    const d = d4Lesson(n, sid), f = frLesson(n, sid);
     rows += `<tr><td><b>L${n}</b><div class="ls-title">${esc(lessonTitle(n))}</div>${at==='abs'?'<span class="tag abs">Absent</span>':at==='inap'?'<span class="tag inapte">Inapte</span>':''}</td>
       <td class="c">${at ? '' : gap('s')(n)}</td><td class="c">${at ? '' : gap('b')(n)}</td>
+      <td>${f ? `${compDot(f.lv, null, true)} <span class="d4-why">${f.lv ? `<b>${COMP_LV[f.lv].n}</b> · ` : ''}${esc(f.why)}</span>` : ''}</td>
       <td class="c">${wv(fb)}</td><td>${dl.length ? esc(dl.map(zoneName).join(', ')) : '—'}</td><td class="c">${wv(r.fa)}</td>
       <td>${d ? `${compDot(d.lv, null, true)} <span class="d4-why">${d.lv ? `<b>${COMP_LV[d.lv].n}</b> · ` : ''}${esc(d.why)}</span>` : ''}</td></tr>`;
   }
   return `<div class="entry-name">${band(sid)}<div class="who">${esc(nameOf(sid))}</div>
       <button class="btn" data-action="profTab" data-tab="comp" style="margin-left:auto">← Retour aux élèves</button></div>
     <div class="card strong compact"><h2>📋 Leçon par leçon</h2>
-      <div class="pj-table-wrap"><table class="pj-table"><tr><th>Leçon</th><th>🏃 Écart cible</th><th>🏀 Écart cible</th><th>💪 Forme (appel)</th><th>🩹 Douleurs</th><th>😮‍💨 Fin de leçon</th><th>❤️ D4 · ressenti / résultat</th></tr>
-        ${rows || '<tr><td colspan="7" class="muted">Pas encore de données</td></tr>'}</table></div>
+      <div class="pj-table-wrap"><table class="pj-table"><tr><th>Leçon</th><th>🏃 Écart cible</th><th>🏀 Écart cible</th><th>🔴 Fil rouge</th><th>💪 Forme (appel)</th><th>🩹 Douleurs</th><th>😮‍💨 Fin de leçon</th><th>❤️ D4 · ressenti / résultat</th></tr>
+        ${rows || '<tr><td colspan="8" class="muted">Pas encore de données</td></tr>'}</table></div>
+      <details class="d4-rule"><summary>Comment l'appli calcule le fil rouge</summary>
+        <p>Le niveau de la leçon est le plus faible des deux : quantité (nombre de courses) et qualité (écart sous la cible en sprint ; au-dessus de la cible, l'écart compte pour 0). Sans cible, seule la quantité compte.</p>
+        <table class="simple"><tr><th></th><th>Courses</th><th>Écart à la cible</th></tr>
+          <tr><th>${compDot(4)} Très bonne</th><td>10 et plus</td><td>0,5 et moins</td></tr><tr><th>${compDot(3)} Satisfaisante</th><td>9</td><td>0,6 à 1,5</td></tr>
+          <tr><th>${compDot(2)} Fragile</th><td>7 ou 8</td><td>1,6 à 2,5</td></tr><tr><th>${compDot(1)} Insuffisante</th><td>6 ou moins</td><td>plus de 2,5</td></tr></table></details>
       <details class="d4-rule"><summary>Comment l'appli calcule D4</summary>
         <p>Fatigue ressentie = forme notée à l'appel − forme en fin de leçon (0 ou moins : aucune · 1 à 2 : modérée · 3 et plus : forte).<br>
         Résultat = moyenne des écarts à la cible en points, sprint et tir (moins de −1 : sous la cible · de −1 à +1 : proche · +1 et plus : au-dessus). Sans cible, la référence est la moyenne de l'élève sur les autres leçons.</p>
         <table class="simple"><tr><th></th><th>Sous la cible</th><th>Proche</th><th>Au-dessus</th></tr>
           ${D4_MAT.map((row, i) => `<tr><th>${E_TXT[i]}</th>${row.map(v => `<td>${compDot(v)} ${COMP_LV[v].n}</td>`).join('')}</tr>`).join('')}</table></details></div>
-    <div class="card strong compact"><h2>❤️ Couleur finale D4 (décision de l'enseignant)</h2>
-      <div class="comp-pick"><div class="comp-h"><b>D4</b> « ${esc(COMP_D.D4.t)} »</div><div class="muted comp-s">« ${esc(COMP_D.D4.s)} »</div>
-      <div class="comp-aid">Proposition de l'appli : ${sug ? `${compDot(sug)} <b>${COMP_LV[sug].n}</b> (majorité des leçons, les dernières comptent plus)` : '<b>—</b> (pas assez de données)'}</div>
-      <div class="comp-btns">${[1,2,3,4].map(v => `<button class="cbtn ${C.D4===v?'on':''} ${sug===v&&!C.D4?'reco':''}" style="--cc:${COMP_LV[v].c};--cf:${COMP_LV[v].f}" data-action="compSet" data-k="D4" data-v="${v}">${COMP_LV[v].n}</button>`).join('')}
-        ${C.D4 ? `<button class="btn ghost xs" data-action="compSet" data-k="D4" data-v="0">Effacer</button>` : ''}</div></div></div>`;
+    <div class="card strong compact"><h2>🎓 Couleurs finales (décision de l'enseignant)</h2>
+      ${compPick('FR', '<b>🔴 Fil rouge</b> · investissement', '', fsug, `moyenne des leçons : ${fm != null ? fmt(fm) : '—'} / 4`)}
+      ${compPick('D4', `<b>D4</b> « ${esc(COMP_D.D4.t)} »`, `« ${esc(COMP_D.D4.s)} »`, sug, 'majorité des leçons, les dernières comptent plus')}</div>`;
 }
 /* ---------------------------------------------------------------------
    Espace enseignant : menu principal + 4 rubriques
@@ -1097,8 +1178,7 @@ function viewHomeEleve(){
       <button class="home-btn saisie" data-action="goSaisie" ${has ? '' : 'disabled'}><span class="ico">✍️</span>2. Saisir</button>
       ${has && isFinale(n) ? `<button class="home-btn stats" data-action="go" data-view="projet"><span class="ico">🎯</span>Mon projet</button>` : ''}
       <button class="home-btn send" data-action="go" data-view="send" ${has ? '' : 'disabled'}><span class="ico">📤</span>3. Envoyer mes saisies</button>
-    </div>
-    <button class="btn small ghost" data-action="switchRole" style="margin-top:8px">⚙️ Enseignant</button></div>`;
+    </div></div>`;
 }
 function viewHomeProfLocked(){
   return `<div class="home">
@@ -1109,10 +1189,10 @@ function viewHomeProfLocked(){
 }
 /* Espace enseignant : 4 étapes */
 const PSECT = {
-  prep:   { ico:'🛠', t:'Préparer le cycle', tabs:[['classes','👥 Classe & élèves'],['groupes','🎽 Groupes'],['cycle','⚙️ Paramètres du cycle'],['themes','📚 Thèmes']] },
+  prep:   { ico:'🛠', t:'Préparer le cycle', tabs:[['classes','👥 Classe & élèves'],['groupes','🎽 Groupes'],['cycle','⚙️ Paramètres du cycle'],['themes','🏛 Piliers']] },
   jour:   { ico:'📅', t:'Leçon du jour', tabs:[['appel','✅ Appel'],['lgroupes','🎽 Groupes du jour'],['cibles','🎯 Cibles'],['qr','📲 QR de la séance'],['saisieP','✍️ Saisie (dépannage)']] },
   recup:  { ico:'📥', t:'Récupérer les saisies', tabs:[] },
-  bilans: { ico:'📊', t:'Bilans', tabs:[['statsP','📊 Statistiques'],['projetP','🎯 Projets'],['comp','❤️ Compétence D4'],['export','📁 Export & sauvegarde']] } };
+  bilans: { ico:'📊', t:'Bilans', tabs:[['statsP','📊 Statistiques'],['projetP','🎯 Projets'],['comp','🎓 Compétences'],['export','📁 Export & sauvegarde']] } };
 const PREDIR = { saisieP:'saisie', statsP:'stats', projetP:'projet' };
 function sectOf(tab){ if (tab === 'compDetail') return 'bilans'; if (tab === 'recup') return 'recup'; return Object.keys(PSECT).find(k => PSECT[k].tabs.some(t => t[0] === tab)) || null; }
 function sectHeader(sec){
@@ -1148,10 +1228,10 @@ function profMenu(){
   const got = S.students.filter(s => { const r = res(n, s.id); return r && (vals(r.c).length || vals(r.b).length); }).length;
   return `<div class="card strong compact center"><b style="font-size:20px">🏫 ${esc(className())}</b> · Leçon ${n}/${S.settings.nbLessons} ${esc(lessonTitle(n) ? '· ' + lessonTitle(n) : '')} · ${pres}/${S.students.length} présent(s) · ${got} saisie(s) reçue(s)</div>
     <div class="pmenu steps">
-      <button class="pm-btn" data-action="profTab" data-tab="classes"><span class="step">1</span><span class="ico">🛠</span>Préparer le cycle<small>Classes · élèves · groupes · paramètres · thèmes</small></button>
+      <button class="pm-btn" data-action="profTab" data-tab="classes"><span class="step">1</span><span class="ico">🛠</span>Préparer le cycle<small>Classes · élèves · groupes · paramètres · piliers</small></button>
       <button class="pm-btn" data-action="profTab" data-tab="appel"><span class="step">2</span><span class="ico">📅</span>Leçon du jour<small>Appel · groupes · cibles · 📲 QR de la séance</small></button>
       <button class="pm-btn" data-action="profTab" data-tab="recup"><span class="step">3</span><span class="ico">📥</span>Récupérer les saisies<small>Scanner les QR des tablettes élèves</small></button>
-      <button class="pm-btn" data-action="profTab" data-tab="statsP"><span class="step">4</span><span class="ico">📊</span>Bilans<small>Statistiques · projets · D4 · export</small></button>
+      <button class="pm-btn" data-action="profTab" data-tab="statsP"><span class="step">4</span><span class="ico">📊</span>Bilans<small>Statistiques · projets · compétences · export</small></button>
     </div>
     <div class="btn-row" style="justify-content:center;margin-top:12px"><button class="btn small" data-action="testClass">🧪 Classe Test</button></div>`;
 }
@@ -1181,7 +1261,7 @@ function profTransfert(){
 function afterProf(){
   if (UI.profTab === 'groupes' || UI.profTab === 'lgroupes') bindGroups();
   if (UI.profTab === 'qr') (async () => { const area = $('#qr-seance'); const payload = await encodeBin(binSeance(curLesson()));
-    if (area && UI.profTab === 'qr' && UI.view === 'prof') showQRSeries(chunkQR(payload, 'S', 260), area, `Séance · ${esc(className())} · leçon ${curLesson()}`); })();
+    if (area && UI.profTab === 'qr' && UI.view === 'prof') showQRSeries(chunkQR(payload, 'S', QR_CHUNK), area, `Séance · ${esc(className())} · leçon ${curLesson()}`); })();
   if (UI.profTab === 'recup') startScan($('#scan-area'), ['R','F'], async p => { await applyPacket(p); return 'continue'; });
 }
 function profClasses(){
@@ -1234,7 +1314,8 @@ function profCycle(){
     const attF = a => rangeField(`${ACT[a].ico} ${a==='s'?'Sprints':'Tirs'}`, nbAtt(n, a), `data-field="att" data-n="${n}" data-a="${a}"`, 0, 10,
         isOverride(n, a) ? ` <button class="btn small ghost xs" data-action="attReset" data-n="${n}" data-a="${a}">Réinitialiser</button>` : '');
     rows += `<div class="lrow"><div class="lesson-num ${n===cur?'cur':''}">${n}</div><div class="lrow-main">
-      <div class="lrow-top"><div class="kind-box">${kindSelect(n)}${kindOf(n)==='manuel'?`<input type="text" data-field="title" data-n="${n}" value="${esc(L.title)}" placeholder="Titre de la leçon">`:''}</div>${sourceSelect(n)}</div>
+      <div class="lrow-top"><div class="kind-box">${kindSelect(n)}${kindOf(n)==='manuel'?`<input type="text" data-field="title" data-n="${n}" value="${esc(L.title)}" placeholder="Titre de la leçon (facultatif)">`:''}</div>${sourceSelect(n)}</div>
+      <div class="lrow-pil">${pilSelect(n, 's')}${pilSelect(n, 'b')}</div>
       <div class="lrow-att">${attF('s')}${attF('b')}</div></div></div>`;
   }
   return `<div class="card strong compact">
@@ -1256,7 +1337,7 @@ function profCycle(){
         ${rangeField('Plots = pts max', st.plotsB, 'data-field="set" data-k="plotsB"', 1, 20)}
       </div>
       <details><summary style="font-weight:900;cursor:pointer">📏 Mise en place des plots</summary>${plotTable()}</details></div>
-    <div class="card compact"><h2>Leçons</h2><div class="muted" style="font-weight:700;margin-bottom:6px">Nature de la leçon ou thème (thèmes à créer dans l'onglet 📚 Thèmes)</div>${rows}</div>`;
+    <div class="card compact"><h2>Leçons</h2><div class="muted" style="font-weight:700;margin-bottom:6px">Nature de la leçon · 1 pilier 🏃 sprint + 1 pilier 🏀 lancer (à créer dans l'onglet 🏛 Piliers)</div>${rows}</div>`;
 }
 function sourceSelect(n, label=''){
   const L = lesson(n), kind = kindOf(n), cur = L.source;
@@ -1265,18 +1346,21 @@ function sourceSelect(n, label=''){
   let opts = o('prev', n === 1 ? 'Choix manuel des cibles' : `Garder les cibles de la leçon ${n-1}`);
   if (kind === 'diag' || kind === 'inter') opts += o('none', 'Cibles à déterminer');
   if (lastKind('diag', n)) opts += o('diag', `Cibles de l'évaluation diagnostique (L${lastKind('diag', n)})`);
-  if (lastKind('inter', n)) opts += o('inter', `Cibles du diagnostic intermédiaire (L${lastKind('inter', n)})`);
+  if (lastKind('inter', n)) opts += o('inter', `Cibles de « Bats Ta Performance ! » (L${lastKind('inter', n)})`);
   if (kind === 'finale') opts += o('projet', "Projet de l'élève");
   opts += Array.from({length:n-1},(_,i)=>i+1).map(x => o(x, `Cibles = résultats de la leçon ${x} (${count(x)} él.)`)).join('');
   const calc = '';                                  // cible = meilleur plot atteint (identique pour toute la leçon)
   return `<div class="src-sel">${label?`<label class="field grow">${label}`:'<label class="grow">'}<select data-field="source" data-n="${n}">${opts}</select></label>${calc}</div>`;
 }
 function kindSelect(n){
-  const k = kindOf(n), th = lesson(n).th, cur = k === 'theme' ? (th ? 'th:' + th.id : 'theme') : k;
-  const o = (v, t) => `<option value="${v}" ${cur===v?'selected':''}>${t}</option>`;
-  const T = themes(), orphan = th && !themeById(th.id) ? o('th:' + th.id, `${ACT[th.a].ico} ${esc(th.n)}`) : '';
-  return `<select data-field="kind" data-n="${n}" class="kind-sel">${['manuel','diag','inter','finale'].map(v => o(v, KINDS[v])).join('')}
-    <optgroup label="Thèmes de leçon">${T.map(t => o('th:' + t.id, `${ACT[t.a].ico} ${esc(t.n)}`)).join('')}${orphan}${o('theme', '❔ Thème à choisir')}</optgroup></select>`;
+  const k = kindOf(n);
+  return `<select data-field="kind" data-n="${n}" class="kind-sel">${['manuel','diag','inter','finale'].map(v => `<option value="${v}" ${k===v?'selected':''}>${KINDS[v]}</option>`).join('')}</select>`;
+}
+function pilSelect(n, a){
+  const v = lesson(n).pil?.[a], cur = v && typeof v === 'object' ? v.id : v === '?' ? '?' : '';
+  const T = themes().filter(t => t.a === a), orphan = v && typeof v === 'object' && !T.some(t => t.id === v.id) ? `<option value="${v.id}" selected>${esc(v.n)}</option>` : '';
+  return `<label class="pil-sel">${ACT[a].ico}<select data-field="pil" data-n="${n}" data-a="${a}"><option value="" ${cur===''?'selected':''}>Pas de pilier</option>
+    ${T.map(t => `<option value="${t.id}" ${cur===t.id?'selected':''}>${esc(t.n)}</option>`).join('')}${orphan}<option value="?" ${cur==='?'?'selected':''}>❔ Pilier à choisir</option></select></label>`;
 }
 function profCibles(){
   const n = curLesson();
@@ -1482,7 +1566,7 @@ function exportXlsx(){
   const syn = [head];
   let maxA = 0; for (let n = 1; n <= N; n++) maxA = Math.max(maxA, nbAtt(n,'s'), nbAtt(n,'b'));
   const det = [['Nom','Prénom','Leçon','Titre','Statut','Épreuve','Cible (points)','Cible (plot)',
-    ...Array.from({length:maxA},(_,k)=>`Tentative ${k+1}`), 'Moyenne (points)', 'Meilleur (points)', 'Forme (appel) /10', 'Douleurs (appel)', 'Forme fin de leçon /10', 'Thème', 'Critères observés', 'D4 de la leçon']];
+    ...Array.from({length:maxA},(_,k)=>`Tentative ${k+1}`), 'Moyenne (points)', 'Meilleur (points)', 'Forme (appel) /10', 'Douleurs (appel)', 'Forme fin de leçon /10', 'Pilier', 'Critères observés', 'Courses (fil rouge)', 'Fil rouge de la leçon', 'D4 de la leçon']];
   sortedStudents().forEach(s => {
     const nom = s.nom || '', pre = s.prenom || s.disp || '';
     const row = [nom, pre, nameOf(s.id), nbGroups() > 1 && s.grp ? groupName(s.grp) : ''];
@@ -1503,7 +1587,8 @@ function exportXlsx(){
           num(ti.value), ti.value!=null ? ACT[a].unit(ti.value) : '',
           ...Array.from({length:maxA},(_,k)=> num(p[k])), v.length ? r2(avg(v)) : '', v.length ? Math.max(...v) : '',
           ...(a === 's' ? [num(fbOf(n, s.id)), dlOf(n, s.id).map(zoneName).join(', '), num((res(n, s.id) || {}).fa)] : ['','','']),
-          ...(th => th && th.a === a ? [th.n, (ob => ob ? th.cr.map((c, i) => `${c} : ${ob[i] ? OBS[ob[i]].n : '—'}`).join(' ; ') : '')(obsOf(n, s.id))] : ['',''])(lessonTheme(n)),
+          ...(th => th ? [th.n, (ob => ob ? th.cr.map((c, i) => `${c} : ${ob[i] ? obsName(ob[i], th) : '—'}`).join(' ; ') : '')(obsOf(n, s.id, a))] : ['',''])(lessonPil(n, a)),
+          ...(a === 's' ? (f => f ? [f.nc != null ? ncName(f.nc) : '', f.lv ? `${COMP_LV[f.lv].n} (${f.why})` : ''] : ['',''])(frLesson(n, s.id)) : ['','']),
           a === 's' ? (d => d && d.lv ? `${COMP_LV[d.lv].n} (${d.why})` : '')(d4Lesson(n, s.id)) : '']);
       });
     }
@@ -1516,29 +1601,30 @@ function exportXlsx(){
   {
     const lvN = v => v ? COMP_LV[v].n : '';
     const ch = ['Nom', 'Prénom', 'Groupe'];
-    for (let n = 1; n <= N; n++) ch.push(`L${n} D4`, `L${n} D4 détail`);
-    ch.push('D4 proposé', 'D4 final');
+    for (let n = 1; n <= N; n++) ch.push(`L${n} fil rouge`, `L${n} D4`, `L${n} D4 détail`);
+    ch.push('Fil rouge : moyenne /4', 'Fil rouge proposé', 'Fil rouge final', 'D4 proposé', 'D4 final');
     const cs = [ch];
     sortedStudents().forEach(s => { const C = compOf(s.id);
       const row = [s.nom || '', s.prenom || s.disp || '', nbGroups() > 1 && s.grp ? groupName(s.grp) : ''];
-      for (let n = 1; n <= N; n++) { const d = d4Lesson(n, s.id), at = attOf(n, s.id);
-        row.push(at === 'abs' ? 'ABS' : at === 'inap' ? 'INAPTE' : d ? lvN(d.lv) : '', d ? d.why : ''); }
-      row.push(lvN(d4Suggest(s.id)), lvN(C.D4)); cs.push(row); });
+      for (let n = 1; n <= N; n++) { const d = d4Lesson(n, s.id), f = frLesson(n, s.id), at = attOf(n, s.id);
+        row.push(at === 'abs' ? 'ABS' : at === 'inap' ? 'INAPTE' : f ? lvN(f.lv) : '', at ? '' : d ? lvN(d.lv) : '', d ? d.why : ''); }
+      const fm = frMoy(s.id);
+      row.push(fm != null ? Math.round(fm * 100) / 100 : '', lvN(frSuggest(s.id)), lvN(C.FR), lvN(d4Suggest(s.id)), lvN(C.D4)); cs.push(row); });
     const w3 = XLSX.utils.aoa_to_sheet([...cs, [], ['D4', COMP_D.D4.t], ['', COMP_D.D4.s]]); w3['!cols'] = ch.map((h, i) => ({ wch: /détail/.test(h) ? 40 : i < 3 ? 16 : 14 }));
-    XLSX.utils.book_append_sheet(wb, w3, 'Compétence D4');
+    XLSX.utils.book_append_sheet(wb, w3, 'Compétences');
   }
   {
     const th = [];
-    for (let n = 1; n <= N; n++) { const t = lessonTheme(n); if (!t) continue;
+    for (let n = 1; n <= N; n++) for (const a of ['s','b']) { const t = lessonPil(n, a); if (!t) continue;
       const head2 = ['Nom', 'Prénom', 'Groupe', ...t.cr];
-      th.push([`L${n} · ${t.n} (${ACT[t.a].ico})`], head2);
-      sortedStudents().forEach(s => { const ob = obsOf(n, s.id), at = attOf(n, s.id);
-        th.push([s.nom || '', s.prenom || s.disp || '', nbGroups() > 1 && s.grp ? groupName(s.grp) : '', ...t.cr.map((c, i) => at === 'abs' ? 'ABS' : at === 'inap' ? 'INAPTE' : ob && ob[i] ? OBS[ob[i]].n : '')]); });
+      th.push([`L${n} · ${ACT[a].ico} ${t.n}`], head2);
+      sortedStudents().forEach(s => { const ob = obsOf(n, s.id, a), at = attOf(n, s.id);
+        th.push([s.nom || '', s.prenom || s.disp || '', nbGroups() > 1 && s.grp ? groupName(s.grp) : '', ...t.cr.map((c, i) => at === 'abs' ? 'ABS' : at === 'inap' ? 'INAPTE' : ob && ob[i] ? obsName(ob[i], t) : '')]); });
       th.push([]); }
     if (th.length) { const w4 = XLSX.utils.aoa_to_sheet(th); w4['!cols'] = [{wch:16},{wch:16},{wch:12},{wch:28},{wch:28},{wch:28},{wch:28},{wch:28}]; XLSX.utils.book_append_sheet(wb, w4, 'Critères observés'); }
   }
-  const lessons = []; for (let n = 1; n <= N; n++) lessons.push([n, lessonTitle(n), lessonTheme(n) ? lessonTheme(n).cr.join(' · ') : '', nbAtt(n,'s'), nbAtt(n,'b'), hasSource(n) ? `Résultats L${lesson(n).source} (${lesson(n).calc==='avg'?'moyenne':'meilleur'})` : (n===1?'À la main':'Reprise leçon précédente')]);
-  XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet([['Leçon','Titre / thème','Critères','Sprints','Tirs basket','Cibles de base'], ...lessons]), 'Leçons');
+  const lessons = []; for (let n = 1; n <= N; n++) lessons.push([n, lessonTitle(n), ['s','b'].map(a => lessonPil(n, a) ? `${ACT[a].ico} ${lessonPil(n, a).n} : ${lessonPil(n, a).cr.join(' · ')}` : '').filter(Boolean).join(' | '), nbAtt(n,'s'), nbAtt(n,'b'), hasSource(n) ? `Résultats L${lesson(n).source} (${lesson(n).calc==='avg'?'moyenne':'meilleur'})` : (n===1?'À la main':'Reprise leçon précédente')]);
+  XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet([['Leçon','Titre / pilier','Critères','Sprints','Tirs basket','Cibles de base'], ...lessons]), 'Leçons');
   const plots = [['Plot / points','Sprint : vitesse (km/h)',`Sprint : distance en ${S.settings.timeS} s (m)`,'Basket : distance (m)']];
   for (let k = 1; k <= Math.max(maxPlots('s'), maxPlots('b')); k++)
     plots.push([k, k<=maxPlots('s')?spdS(k):'', k<=maxPlots('s')?Math.round(distS(k)*100)/100:'', k<=maxPlots('b')?distB(k):'']);
@@ -1633,8 +1719,9 @@ async function applyPacket(p){
     if (p.groupColors) S.settings.groupColors = p.groupColors;
     const L = lesson(p.settings.current);
     L.title = p.title; L.kind = p.kind === 'manuel' ? undefined : p.kind; if (L.kind) L.title = ''; L.nbCourses = p.nbC; L.nbTirs = p.nbT;
-    L.th = p.kind === 'theme' ? (p.th || null) : undefined; L.adv = {};
-    if (p.adv) list.forEach((s, i) => { if (p.adv[i]) L.adv[s.id] = p.adv[i]; });
+    L.pil = p.pil || { s:null, b:null }; L.adv = { s:{}, b:{} }; delete L.th;
+    if (L.kind === 'theme') { L.kind = undefined; if (p.th) { L.pil[p.th.a] = p.th; list.forEach((s, i) => { if (p.adv?.[i]) L.adv[p.th.a][s.id] = p.adv[i]; }); } }
+    if (p.advs) ['s','b'].forEach(a => list.forEach((s, i) => { if (p.advs[a][i]) L.adv[a][s.id] = p.advs[a][i]; }));
     L.fixedS = {}; L.fixedB = {}; L.manual = {}; L.manualB = {}; L.adjust = {}; L.adjustB = {}; L.att = {}; L.grpOv = {};
     list.forEach((s, i) => { const r = p.rows[i]; if (!r) return;
       if (r.tS != null) L.fixedS[s.id] = r.tS; if (r.tB != null) L.fixedB[s.id] = r.tB;
@@ -1693,19 +1780,50 @@ function sumRead(r){
 }
 function binSeance(n){
   const cur = n || curLesson(), N = binNames(), L = binLesson(cur), list = sortedStudents(), withSum = isFinale(cur);
-  const w = BW(); w.u8('S'.charCodeAt(0)); w.u8(1);
+  const w = BW(); w.u8('S'.charCodeAt(0)); w.u8(2);
   w.u16(N.length); N.forEach(x => w.u8(x)); w.u16(L.length); L.forEach(x => w.u8(x));
   w.u8(withSum ? 1 : 0);
   if (withSum) list.forEach(s => sumBytes(w, s.id));
+  /* v2 : historique complet des leçons précédentes (chaque course, chaque tir, piliers, fil rouge, forme) */
+  const arr = a => { a = a || []; w.u8(a.length); a.forEach(v => w.u8(nv(v))); };
+  w.u8(cur - 1);
+  for (let k = 1; k < cur; k++) {
+    const Lk = lesson(k);
+    w.u8(k); w.u8(KIND_IDX.indexOf(kindOf(k))); w.str(kindOf(k) === 'manuel' ? (Lk.title || '') : '', 60);
+    ['s','b'].forEach(a => { const th = lessonPil(k, a); w.u8(th ? 1 : pilTodo(k, a) ? 2 : 0);
+      if (th) { w.str(th.id, 8); w.str(th.n, 60); w.u8(isTraj(th) ? 2 : 0); w.u8(th.cr.length); th.cr.forEach(c => w.str(c, 60)); } });
+    list.forEach(s => {
+      const at = attOf(k, s.id), r = res(k, s.id), wb = Lk.wb?.[s.id];
+      const hasR = !!(r && (vals(r.c).length || vals(r.b).length || r.fa || r.nc != null || r.ob || r.obB));
+      w.u8((at === 'abs' ? 1 : at === 'inap' ? 2 : 0) | (hasR ? 4 : 0) | (wb ? 8 : 0));
+      if (hasR) { w.u8(nv(targetInfo(k, s.id, 's').value)); w.u8(nv(targetInfo(k, s.id, 'b').value)); arr(r.c); arr(r.b); w.u8(nv(r.fa)); arr(r.ob); arr(r.obB); w.u8(nv(r.nc)); }
+      if (wb) { w.u8(nv(wb.fb)); w.u32(zoneMask(wb.dl)); }
+    });
+  }
   return w.bytes();
 }
-function seanceDecode(u, r){
+function seanceDecode(u, r, ver){
   const nN = r.u16(), N = u.slice(r.pos(), r.pos() + nN); r.skip(nN);
   const nL = r.u16(), L = u.slice(r.pos(), r.pos() + nL); r.skip(nL);
   const names = binDecode(N), les = binDecode(L);
   let sums = null;
   if (r.u8()) { sums = []; for (let i = 0; i < names.students.length; i++) sums.push(sumRead(r)); }
-  return { k:'seance', names, lesson: les, sums };
+  const hist = [];
+  if (ver >= 2 && !r.end()) {
+    const arr = () => { const n = r.u8(), o = []; for (let i = 0; i < n; i++) o.push(vn(r.u8())); return o; };
+    const nh = r.u8();
+    for (let h = 0; h < nh; h++) {
+      const k = r.u8(), kind = KIND_IDX[r.u8()] || 'manuel', title = r.str(), pil = { s:null, b:null };
+      ['s','b'].forEach(a => { const f = r.u8(); if (f === 2) pil[a] = '?';
+        if (f === 1) { const th = { id: r.str(), n: r.str(), a, cr: [] }; if (r.u8() & 2) th.k = 't'; const nc = r.u8(); for (let i = 0; i < nc; i++) th.cr.push(r.str()); pil[a] = th; } });
+      const rows = names.students.map(() => { const f = r.u8(), o = { att: [null,'abs','inap'][f & 3] };
+        if (f & 4) { o.tS = vn(r.u8()); o.tB = vn(r.u8()); o.c = arr(); o.b = arr(); o.fa = vn(r.u8()); const ob = arr(), obB = arr(); if (ob.length) o.ob = ob; if (obB.length) o.obB = obB; o.nc = vn(r.u8()); o.res = true; }
+        if (f & 8) { o.wb = { fb: vn(r.u8()), dl: maskZones(r.u32()) }; }
+        return o; });
+      hist.push({ k, kind, title, pil, rows });
+    }
+  }
+  return { k:'seance', names, lesson: les, sums, hist };
 }
 async function applySeance(p){
   const c = targetClass(p.names.cid, p.names.className, true);
@@ -1719,6 +1837,19 @@ async function applySeance(p){
   const L = lesson(p.lesson.settings.current);
   L.sum = {};
   if (p.sums) S.students.forEach((s, i) => { if (p.sums[i]) L.sum[s.id] = p.sums[i]; });
+  (p.hist || []).forEach(h => {                       // historique des leçons précédentes (le prof fait référence)
+    const Lh = lesson(h.k);
+    Lh.kind = h.kind === 'manuel' ? undefined : h.kind; Lh.title = h.title; Lh.pil = h.pil; Lh.adv = { s:{}, b:{} };
+    Lh.att = {}; Lh.fixedS = {}; Lh.fixedB = {}; Lh.wb = {}; Lh.source = 'none';
+    S.results[h.k] = S.results[h.k] || {};
+    S.students.forEach((s, i) => { const o = h.rows[i]; if (!o) return;
+      if (o.att) Lh.att[s.id] = o.att;
+      if (o.wb) Lh.wb[s.id] = o.wb;
+      if (o.res) {
+        if (o.tS != null) Lh.fixedS[s.id] = o.tS; if (o.tB != null) Lh.fixedB[s.id] = o.tB;
+        S.results[h.k][s.id] = { c:o.c, b:o.b, fa:o.fa, nc:o.nc, ...(o.ob ? { ob:o.ob } : {}), ...(o.obB ? { obB:o.obB } : {}), ts: 1, d: 'prof' };
+      } });
+  });
   ROOT.seance = { cid: S.id, n: p.lesson.settings.current, at: now() };
   save(); toast(`✓ Séance reçue : ${className()} · leçon ${p.lesson.settings.current}`, 3500);
   UI.filter = null; go('home');
@@ -1736,7 +1867,7 @@ function binNames(){
 }
 function binLesson(n){
   const cur = n || curLesson(), L = lesson(cur), st = S.settings, list = sortedStudents();
-  const w = BW(); w.u8('L'.charCodeAt(0)); w.u8(5);
+  const w = BW(); w.u8('L'.charCodeAt(0)); w.u8(6);
   w.id(S.id);
   w.u32(listHash(list.map(s => s.id)));
   [st.nbLessons, cur, st.baseCourses, st.baseTirs, st.plotsS, st.plotsB, st.ecartS, st.ecartB, nbAtt(cur,'s'), nbAtt(cur,'b')].forEach(v => w.u8(v));
@@ -1749,14 +1880,16 @@ function binLesson(n){
     w.u8((aS<0?1:aS>0?2:0) | ((aB<0?1:aB>0?2:0)<<2) | ((at==='abs'?1:at==='inap'?2:0)<<4));
     w.u8(grpOf(s.id, cur));
   });
-  const th = lessonTheme(cur);                       // v5 : thème + critères + conseil de la fois précédente
-  w.u8(th ? 1 : 0);
-  if (th) { w.str(th.id, 8); w.str(th.n, 60); w.u8(th.a === 'b' ? 1 : 0); w.u8(th.cr.length); th.cr.forEach(c => w.str(c, 60));
-    list.forEach(s => { const a = pickAdvice(lastObs(cur, s.id)); w.u8(a ? a.i : 255); w.u8(a ? a.v : 0); w.u8(a ? a.k : 0); }); }
+  ['s','b'].forEach(a => {                           // v6 : pilier sprint + pilier lancer (critères + conseil de la fois précédente)
+    const th = lessonPil(cur, a);
+    w.u8(th ? 1 : pilTodo(cur, a) ? 2 : 0);
+    if (th) { w.str(th.id, 8); w.str(th.n, 60); w.u8(isTraj(th) ? 2 : 0); w.u8(th.cr.length); th.cr.forEach(c => w.str(c, 60));
+      list.forEach(s => { const p = pickAdvice(lastObs(cur, s.id, a)); w.u8(p ? p.i : 255); w.u8(p ? p.v : 0); w.u8(p ? p.k : 0); }); }
+  });
   return w.bytes();
 }
 function binResults(){
-  const w = BW(); w.u8('R'.charCodeAt(0)); w.u8(4); w.id(S.deviceId); w.id(S.id);
+  const w = BW(); w.u8('R'.charCodeAt(0)); w.u8(5); w.id(S.deviceId); w.id(S.id);
   const ents = [], projs = [];
   Object.entries(S.results).forEach(([n, byS]) => Object.entries(byS).forEach(([sid, r]) => { if (r.d === S.deviceId) ents.push([+n, sid, r]); }));
   Object.entries(S.projects).forEach(([sid, p]) => { if (p.d === S.deviceId) projs.push([sid, p]); });
@@ -1764,7 +1897,8 @@ function binResults(){
   ents.forEach(([n, sid, r]) => { w.id(sid); w.u8(n); w.u32(Math.floor((r.ts||0)/1000));
     const c = r.c||[], b = r.b||[]; w.u8(c.length); c.forEach(v => w.u8(nv(v))); w.u8(b.length); b.forEach(v => w.u8(nv(v)));
     w.u8(nv(r.fb)); w.u8(nv(r.fa)); w.u8(nv(r.mo)); w.u32(zoneMask(r.dl));
-    const ob = r.ob || []; w.u8(ob.length); ob.forEach(v => w.u8(nv(v))); });
+    const ob = r.ob || []; w.u8(ob.length); ob.forEach(v => w.u8(nv(v))); w.u8(nv(r.nc));
+    const obB = r.obB || []; w.u8(obB.length); obB.forEach(v => w.u8(nv(v))); });
   w.u8(projs.length);
   projs.forEach(([sid, p]) => { w.id(sid); w.u8(nv(p.cibleS)); w.u8(nv(p.cibleB)); w.u32(Math.floor((p.ts||0)/1000)); w.str(p.texte||'', 600); w.u8(nv(p.formeJ)); w.u8(nv(p.motivJ)); });
   return { bytes: w.bytes(), count: ents.length + projs.length };
@@ -1790,13 +1924,17 @@ function binDecode(u){
     const title = r.str(), kind = ver >= 4 ? KIND_IDX[r.u8()] || 'manuel' : 'manuel', n = r.u8(), rows = [];
     for (let i = 0; i < n; i++) { const tS = vn(r.u8()), tB = vn(r.u8()), f = r.u8(), g = r.u8();
       rows.push({ tS, tB, aS: [0,-1,1][f&3], aB: [0,-1,1][(f>>2)&3], att: [null,'abs','inap'][(f>>4)&3], grp: ver >= 3 ? g : 0 }); }
+    const pil = { s:null, b:null }, advs = { s:[], b:[] };
+    const readAdv = arr => { for (let i = 0; i < n; i++) { const ai = r.u8(), av = r.u8(), ak = r.u8(); arr.push(ai === 255 ? null : { i: ai, v: av, k: ak }); } };
+    if (ver >= 6) ['s','b'].forEach(a => { const f = r.u8(); if (f === 2) pil[a] = '?';
+      if (f === 1) { const th = { id: r.str(), n: r.str(), a, cr: [] }; if (r.u8() & 2) th.k = 't'; const nc = r.u8(); for (let i = 0; i < nc; i++) th.cr.push(r.str()); pil[a] = th; readAdv(advs[a]); } });
     let th = null, adv = [];
-    if (ver >= 5 && r.u8()) { th = { id: r.str(), n: r.str(), a: r.u8() ? 'b' : 's', cr: [] }; const nc = r.u8(); for (let i = 0; i < nc; i++) th.cr.push(r.str());
+    if (ver === 5 && r.u8()) { th = { id: r.str(), n: r.str(), cr: [] }; { const f = r.u8(); th.a = f & 1 ? 'b' : 's'; if (f & 2) th.k = 't'; } const nc = r.u8(); for (let i = 0; i < nc; i++) th.cr.push(r.str());
       for (let i = 0; i < n; i++) { const ai = r.u8(), av = r.u8(), ak = r.u8(); adv.push(ai === 255 ? null : { i: ai, v: av, k: ak }); } }
     const [nbLessons, current, baseCourses, baseTirs, plotsS, plotsB, ecartS, ecartB, nbC, nbT] = v;
-    return { k:'lesson', cid, hash, groupColors, settings:{ nbLessons, current, baseCourses, baseTirs, plotsS, plotsB, ecartS, ecartB, ...bar, ...grp }, nbC, nbT, title, kind, rows, th, adv };
+    return { k:'lesson', cid, hash, groupColors, settings:{ nbLessons, current, baseCourses, baseTirs, plotsS, plotsB, ecartS, ecartB, ...bar, ...grp }, nbC, nbT, title, kind, rows, th, adv, pil, advs };
   }
-  if (t === 'S') return seanceDecode(u, r);
+  if (t === 'S') return seanceDecode(u, r, ver);
   if (t === 'R') {
     const from = r.id(), cid = ver >= 2 ? r.id() : null, n = r.u16(), results = {}, projects = {};
     for (let i = 0; i < n; i++) { const sid = r.id(), les = r.u8(), ts = r.u32()*1000;
@@ -1805,6 +1943,7 @@ function binDecode(u){
       const e = { c, b, ts, d: from };
       if (ver >= 3) { e.fb = vn(r.u8()); e.fa = vn(r.u8()); e.mo = vn(r.u8()); e.dl = maskZones(r.u32()); }
       if (ver >= 4) { const no = r.u8(); if (no) { e.ob = []; for (let k = 0; k < no; k++) e.ob.push(vn(r.u8())); } }
+      if (ver >= 5) { const nc = vn(r.u8()); if (nc != null) e.nc = nc; const nb2 = r.u8(); if (nb2) { e.obB = []; for (let k = 0; k < nb2; k++) e.obB.push(vn(r.u8())); } }
       (results[les] = results[les] || {})[sid] = e; }
     const np = r.u8();
     for (let i = 0; i < np; i++) { const sid = r.id(), cS = vn(r.u8()), cB = vn(r.u8()), ts = r.u32()*1000, texte = r.str(true);
@@ -1828,14 +1967,14 @@ function packRP(results, projects){
   T = isFinite(T) ? Math.floor(T/1000) : 0;
   const R = {}, P = {};
   Object.entries(results||{}).forEach(([n, byS]) => { R[n] = {}; Object.entries(byS||{}).forEach(([sid, r]) => {
-    R[n][sid] = [r.c||[], r.b||[], Math.floor((r.ts||0)/1000) - T, di(r.d), r.fb ?? null, r.fa ?? null, r.mo ?? null, r.dl || [], r.ob || null]; }); });
+    R[n][sid] = [r.c||[], r.b||[], Math.floor((r.ts||0)/1000) - T, di(r.d), r.fb ?? null, r.fa ?? null, r.mo ?? null, r.dl || [], r.ob || null, r.nc ?? null, r.obB || null]; }); });
   Object.entries(projects||{}).forEach(([sid, p]) => { P[sid] = [p.cibleS ?? null, p.cibleB ?? null, p.texte||'', Math.floor((p.ts||0)/1000) - T, di(p.d), p.formeJ ?? null, p.motivJ ?? null]; });
   return { T, D, R, P };
 }
 function unpackRP(z){
   const results = {}, projects = {};
   Object.entries(z.R||{}).forEach(([n, byS]) => { results[n] = {}; Object.entries(byS).forEach(([sid, a]) => {
-    results[n][sid] = { c:a[0], b:a[1], ts:(z.T + a[2])*1000, d:z.D[a[3]], fb:a[4] ?? null, fa:a[5] ?? null, mo:a[6] ?? null, dl:a[7] || [], ...(a[8] ? { ob:a[8] } : {}) }; }); });
+    results[n][sid] = { c:a[0], b:a[1], ts:(z.T + a[2])*1000, d:z.D[a[3]], fb:a[4] ?? null, fa:a[5] ?? null, mo:a[6] ?? null, dl:a[7] || [], ...(a[8] ? { ob:a[8] } : {}), ...(a[9] != null ? { nc:a[9] } : {}), ...(a[10] ? { obB:a[10] } : {}) }; }); });
   Object.entries(z.P||{}).forEach(([sid, a]) => { projects[sid] = { cibleS:a[0], cibleB:a[1], texte:a[2], ts:(z.T + a[3])*1000, d:z.D[a[4]], formeJ:a[5] ?? null, motivJ:a[6] ?? null }; });
   return { results, projects };
 }
@@ -2041,7 +2180,8 @@ async function startScan(container, expectType, onDone){
   const video = container.querySelector('video'), msg = container.querySelector('#scan-msg'), partsEl = container.querySelector('.scan-parts');
   const me = scan = { stopped:false, parts:{}, id:null, n:0, frame:0 };
   const cv = document.createElement('canvas'), ctx = cv.getContext('2d', { willReadFrequently:true });
-  const showParts = () => { partsEl.innerHTML = me.n > 1 ? Array.from({length:me.n},(_,k)=>`<span class="${me.parts[k+1]?'ok':''}">${k+1}</span>`).join('') : ''; };
+  const showParts = () => { const got = Object.keys(me.parts).length, pc = me.n ? Math.round(got / me.n * 100) : 0;
+    partsEl.innerHTML = me.n > 1 ? `<div class="scan-prog"><div class="scan-bar" style="width:${pc}%"></div><span>${pc} %</span></div>` : ''; };
   let finished = false;
   const handle = async texts => {
     for (const txt of texts) {
@@ -2055,7 +2195,7 @@ async function startScan(container, expectType, onDone){
       const got = Object.keys(me.parts).length;
       showParts();
       const miss = Array.from({length:me.n},(_,k)=>k+1).filter(k=>!me.parts[k]);
-      msg.textContent = me.n > 1 ? `QR reçus : ${got} / ${me.n}${miss.length && miss.length<=3 ? ' — il manque : ' + miss.join(', ') : ''}` : 'QR reçu !';
+      msg.textContent = me.n > 1 ? (got < me.n ? `Import : ${Math.round(got / me.n * 100)} % · laissez défiler les QR devant la caméra` : 'Import : 100 %') : 'QR reçu !';
       if (got === me.n && !finished) {
         finished = true;
         const payload = Array.from({length: me.n}, (_, k) => me.parts[k+1]).join('');
@@ -2202,6 +2342,7 @@ const A = {
   profTab: d => { UI.sel = null; UI.profTab = d.tab;
     if (PREDIR[d.tab]) { if (d.tab === 'saisieP') UI.filter = null; return go(PREDIR[d.tab]); }
     UI.view = 'prof'; render(); window.scrollTo(0,0); },
+  toEleve: () => { ROOT.role = 'eleve'; UI.profUnlocked = false; UI.profTab = 'menu'; save(); go('home'); toast('🧒 Espace élève · retour enseignant : appui long sur le logo'); },
   lockProf: () => { UI.profUnlocked = false; UI.profTab = 'menu'; go('home'); },
   setRole: d => {
     if (d.r === 'prof') return pinPad(() => { ROOT.role = 'prof'; UI.profUnlocked = true; UI.profTab = 'menu'; save(); go('prof'); });
@@ -2213,16 +2354,17 @@ const A = {
   well: d => { const n = curLesson(), sid = UI.sid, v = +d.v; setRes(n, sid, r => { r[d.f] = r[d.f] === v ? null : v; }); render(); flagSaved(); },
   painOpen: () => painModal(),
   appelWell: d => appelWellModal(d.sid),
-  obs: d => { const n = curLesson(), th = lessonTheme(n); if (!th) return; const i = +d.i, v = +d.v;
-    setRes(n, UI.sid, r => { const ob = Array.from({length: th.cr.length}, (_, j) => (r.ob || [])[j] ?? null); ob[i] = ob[i] === v ? null : v; r.ob = ob; r.oth = th.id; });
+  nc: d => { const v = +d.v; setRes(curLesson(), UI.sid, r => { r.nc = r.nc === v ? null : v; }); render(); flagSaved(); },
+  obs: d => { const n = curLesson(), a = d.a === 'b' ? 'b' : 's', th = lessonPil(n, a); if (!th) return; const i = +d.i, v = +d.v, K = obKey(a);
+    setRes(n, UI.sid, r => { const ob = Array.from({length: th.cr.length}, (_, j) => (r[K] || [])[j] ?? null); ob[i] = ob[i] === v ? null : v; r[K] = ob; });
     render(); flagSaved(); },
   thToggle: () => { UI.thOpen = !UI.thOpen; render(); },
-  thAdd: () => { const id = rnd(4); themes().push({ id, n:'Nouveau thème', a:'s', cr:[] }); UI.thOpen = true; save(); render(); },
+  thAdd: () => { const id = rnd(4); themes().push({ id, n:'Nouveau pilier', a:'s', cr:[] }); UI.thOpen = true; save(); render(); },
   thDel: async d => { const t = themeById(d.id); if (!t) return;
-    if (!(await confirmBox('Supprimer « ' + esc(t.n) + ' » ?', 'Les leçons qui utilisent déjà ce thème le gardent.', 'Supprimer', true))) return;
+    if (!(await confirmBox('Supprimer « ' + esc(t.n) + ' » ?', 'Les leçons qui utilisent déjà ce pilier le gardent.', 'Supprimer', true))) return;
     ROOT.themes = themes().filter(x => x.id !== d.id); save(); render(); },
   testClass: async () => { const ex = Object.values(ROOT.classes).find(c => c.settings.className === 'Classe Test');
-    const ch = await choiceBox('🧪 Classe Test', '39 élèves répartis au hasard en 10 groupes · 7 leçons, leçon du jour : 6. L1 diagnostic · L2 Posture de départ · L3 Premiers appuis · L4 diagnostic intermédiaire · L5 Maintien de la vitesse · L6 thème à choisir · L7 évaluation du projet. 6 sprints de 6 s et 6 lancers, 8 points max.',
+    const ch = await choiceBox('🧪 Classe Test', '39 élèves répartis au hasard en 10 groupes · 7 leçons, leçon du jour : 6. L1 diagnostic · L2 Réagir vite / Position du lanceur · L3 Courir droit / Pousser vite et fort · L4 Bats Ta Performance ! · L5 Utilisation des bras / Angle d’envol · L6 piliers à choisir · L7 évaluation du projet. 6 sprints de 6 s et 6 lancers, 8 points max.',
       ex ? [{label:'Ouvrir', value:'open', cls:'primary'}, {label:'Régénérer', value:'new', cls:'orange'}] : [{label:'Créer', value:'new', cls:'primary'}]);
     if (!ch) return; if (ch === 'new') makeTestClass(); else useClass(ex.id); save(); toast('🧪 Classe Test'); render(); },
   compDetail: d => { UI.sid = d.sid; UI.profTab = 'compDetail'; render(); window.scrollTo(0,0); },
@@ -2343,14 +2485,15 @@ document.addEventListener('change', e => {
     if (v === +S.settings[ACT[a].base]) delete L[ACT[a].att]; else L[ACT[a].att] = v; save(); render(); }
   if (f === 'set') { S.settings[t.dataset.k] = +t.value; save(); render(); }
   if (f === 'source') { lesson(t.dataset.n).source = /^\d+$/.test(t.value) ? +t.value : t.value; save(); render(); toast('✓ Cibles mises à jour'); }
+  if (f === 'pil') { const L = lesson(t.dataset.n), a = t.dataset.a, v = t.value; L.pil = L.pil || { s:null, b:null };
+    L.pil[a] = v === '' ? null : v === '?' ? '?' : (snapTheme(themeById(v)) || L.pil[a]); save(); render(); return; }
   if (f === 'kind') { const L = lesson(t.dataset.n), v = t.value;
-    if (v.startsWith('th:')) { L.kind = 'theme'; L.th = snapTheme(themeById(v.slice(3))) || L.th; }
-    else { L.kind = v; if (v !== 'theme') delete L.th; else L.th = null; }
-    if (L.kind === 'theme') L.title = '';
+    L.kind = v;
     if (t.value === 'diag' || t.value === 'inter') L.source = 'none'; else if (t.value === 'finale') L.source = 'projet'; else if (['none','projet'].includes(L.source)) L.source = 'prev';
     save(); render(); }
-  if (f === 'thName' || f === 'thAct' || f === 'thCr') { const th = themeById(t.dataset.id); if (!th) return;
-    if (f === 'thName') th.n = t.value.trim() || 'Thème';
+  if (f === 'thName' || f === 'thAct' || f === 'thCr' || f === 'thKind') { const th = themeById(t.dataset.id); if (!th) return;
+    if (f === 'thKind') { if (t.value === 't') { th.k = 't'; th.cr = ['Trajectoire de la balle']; } else { delete th.k; th.cr = []; } }
+    if (f === 'thName') th.n = t.value.trim() || 'Pilier';
     if (f === 'thAct') th.a = t.value === 'b' ? 'b' : 's';
     if (f === 'thCr') { const cr = Array.from({length:MAX_CR}, (_, i) => th.cr[i] || ''); cr[+t.dataset.i] = t.value.trim(); th.cr = cr.filter(Boolean); }
     refreshThemeSnapshots(th.id); save(); render(); return; }
@@ -2368,6 +2511,13 @@ document.addEventListener('input', e => {
 for (let n = 1; n <= S.settings.nbLessons; n++) lesson(n);
 computeNames();
 const verEl = document.getElementById('app-version'); if (verEl) verEl.textContent = 'Version ' + APP_VERSION;
+/* Appui long (2 s) sur le logo : repasser une tablette élève en tablette enseignant (code) */
+(() => { const logo = document.querySelector('.tb-home'); if (!logo) return; let t = null, long = false;
+  const start = () => { long = false; clearTimeout(t); t = setTimeout(() => { long = true; if (!isProfRole()) A.switchRole(); }, 2000); };
+  const stop = () => clearTimeout(t);
+  logo.addEventListener('pointerdown', start); ['pointerup','pointerleave','pointercancel'].forEach(e => logo.addEventListener(e, stop));
+  logo.addEventListener('contextmenu', e => e.preventDefault());
+  logo.addEventListener('click', e => { if (long) { e.stopPropagation(); e.preventDefault(); long = false; } }, true); })();
 render();
 /* Mise à jour automatique : dès qu'une nouvelle version est publiée, l'appli se recharge toute seule */
 if ('serviceWorker' in navigator && location.protocol !== 'file:') {
