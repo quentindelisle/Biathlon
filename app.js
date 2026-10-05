@@ -10,7 +10,7 @@
    ===================================================================== */
 'use strict';
 
-const APP_VERSION = '8.2.6';
+const APP_VERSION = '8.2.7';
 const STORE_KEY = 'neps_biathlon5s_v2';
 const QR_CHUNK = 440;           // caractères base45 par QR (QR version 11 max : facile à lire par une caméra)
 
@@ -486,7 +486,7 @@ function viewEntry(){
     const A_ = ACT[a], nb = nbAtt(n, a), p = perf(n, sid, a), t = targetInfo(n, sid, a).value, mx = maxPlots(a);
     if (!nb) return;
     const W = A_.word[0].toUpperCase() + A_.word.slice(1);
-    h += `<section class="entry-sec sec-${a}">${targetCol(n, sid, a)}<div class="sec-main">
+    h += `<section class="entry-sec sec-${a}"><div class="sec-main">
       <h2>${A_.ico} ${A_.label} · ${nb} ${A_.word}${nb>1?'s':''}</h2>
       <div class="dials">`;
     for (let k = 0; k < nb; k++) {

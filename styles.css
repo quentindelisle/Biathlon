@@ -473,3 +473,62 @@ select[disabled]{opacity:.7}
 .pil-sel select{min-width:220px}
 .pil-sel select{font-size:15px;min-height:40px;padding:4px 10px}
 .tag.pain{color:#fff;background:#D0161B;border-color:#D0161B}
+
+/* ==== v8.2.7 : saisie plus compacte (plus de colonne « cible ») + format portrait (smartphone / tablette) ==== */
+.entry-sec{grid-template-columns:1fr}
+.dial{width:100%;height:auto;aspect-ratio:1/1;max-width:210px}
+.dial.big{max-width:255px}
+/* observables : les 4 réponses sur une seule ligne, boutons compacts */
+.obs-row{display:block}
+.obs-c{font-size:18px;margin-bottom:6px}
+.obs-btns{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:6px}
+.obtn{min-height:46px;min-width:0;padding:6px 4px;font-size:16px;border-radius:10px}
+.fr-sec .obs-btns{grid-template-columns:repeat(6,minmax(0,1fr))}
+.traj-btns{grid-template-columns:repeat(4,minmax(0,1fr));gap:6px}
+.trbtn{padding:6px 4px;font-size:14px;border-width:3px}
+.trbtn svg{width:100%;height:auto}
+
+/* tablette en portrait */
+@media (max-width:900px){
+  .sec-main .dials,.dials{grid-template-columns:repeat(3,minmax(0,1fr));gap:10px}
+  .dial-card{padding:8px}
+  .dial-card h3{font-size:17px}
+  .tiles{grid-template-columns:repeat(3,minmax(0,1fr))}
+  .pmenu .pm-btn{min-height:120px;font-size:21px}
+}
+/* smartphone */
+@media (max-width:600px){
+  body{font-size:16px}
+  #main{padding-left:8px;padding-right:8px}
+  #topbar{gap:8px;padding-left:8px;padding-right:8px}
+  .tb-home{width:40px;height:40px}
+  #tb-main{font-size:17px} #tb-sub{font-size:13px}
+  #tb-right .btn{min-height:38px;padding:4px 10px;font-size:14px}
+  .entry-name{padding:6px 8px 6px 20px;gap:8px}
+  .entry-name .who{font-size:21px}
+  .entry-name .btn{min-height:40px;font-size:14px;padding:4px 10px}
+  .sec-main .dials,.dials{grid-template-columns:repeat(2,minmax(0,1fr));gap:8px}
+  .dial-card{padding:6px}
+  .dial-card h3{font-size:15px} .dial-card h3 .big-ico{font-size:22px}
+  .dial-tgt{font-size:14px}
+  .dial-card .btn.small{min-height:34px;font-size:13px;padding:2px 8px}
+  .tiles{grid-template-columns:repeat(2,minmax(0,1fr));gap:8px}
+  .obs-sec{padding:10px 8px}
+  .obs-sec h2{font-size:17px}
+  .obs-c{font-size:16px}
+  .obtn{min-height:42px;font-size:13px;padding:4px 2px}
+  .fr-sec .obs-btns{grid-template-columns:repeat(3,minmax(0,1fr))}
+  .trbtn{font-size:11px}
+  .fr-strip{gap:6px;padding:6px 8px}
+  .fr-moy{margin-left:0}
+  .tab{min-height:42px;font-size:14px;padding:4px 10px}
+  .pmenu .pm-btn{min-height:96px;font-size:19px}
+  .home-btn{min-height:84px;font-size:20px}
+  .home-grid.steps{grid-template-columns:1fr}
+  .grp-pick{grid-template-columns:repeat(2,minmax(0,1fr))}
+  .grp-btn{min-height:100px;font-size:22px}
+  .pil-sel select{min-width:0;width:100%}
+  .lrow-pil{display:grid;grid-template-columns:1fr}
+  .nav-bottom .btn{flex:1 1 30%;font-size:14px;min-height:44px;padding:4px 6px}
+  .card{padding:10px}
+}
