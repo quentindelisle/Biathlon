@@ -10,7 +10,7 @@
    ===================================================================== */
 'use strict';
 
-const APP_VERSION = '8.2.0';
+const APP_VERSION = '8.2.3';
 const STORE_KEY = 'neps_biathlon5s_v2';
 const QR_CHUNK = 440;           // caractères base45 par QR (QR version 11 max : facile à lire par une caméra)
 
@@ -499,7 +499,6 @@ function viewEntry(){
     h += obsBlock(n, sid, a);
   });
   h += frBlock(n, sid);
-  h += wellBlock(n, sid, 'apres');
   h += `<div class="nav-bottom">
       <button class="btn" data-action="entry" data-sid="${prev?.id||''}" ${prev?'':'disabled'}>← ${prev?esc(nameOf(prev.id)):'Précédent'}</button>
       <button class="btn primary" data-action="go" data-view="saisie">▦ Retour aux élèves</button>
@@ -550,7 +549,11 @@ function bindEntry(){
       const v = valFromEvent(e); if (v != null) { cur = v; show(v); } });
     svg.addEventListener('pointermove', e => { if (!dragging) return; const v = valFromEvent(e); if (v != null && v !== cur) { cur = v; show(v); } });
     const end = () => { if (!dragging) return; dragging = false;
-      if (cur != null && cur !== (res(n, sid)?.[key]?.[k] ?? null)) { setRes(n, sid, r => { r[key][k] = cur; }); flagSaved(); } };
+      if (cur != null && cur !== (res(n, sid)?.[key]?.[k] ?? null)) {
+        const was = vals(perf(n, sid, a)).length >= nbAtt(n, a);
+        setRes(n, sid, r => { r[key][k] = cur; });
+        if (was !== (vals(perf(n, sid, a)).length >= nbAtt(n, a))) render();      // toutes les courses / tous les tirs saisis : critères du pilier disponibles
+        flagSaved(); } };
     svg.addEventListener('pointerup', end); svg.addEventListener('pointercancel', end);
   });
 }
@@ -650,6 +653,15 @@ function obsBlock(n, sid, a){
   return `<section class="obs-sec on"><h2>👀 ${ACT[a].ico} ${esc(th.n)} · ce que l'observateur a vu</h2>
     ${th.cr.map((c, i) => `<div class="obs-row"><div class="obs-c">${esc(c)}</div><div class="obs-btns">${[4,3,2,1].map(v =>
       `<button class="obtn ${ob[i]===v?'on':''}" style="--cc:${OBS[v].c};--cf:${OBS[v].f}" data-action="obs" data-a="${a}" data-i="${i}" data-v="${v}">${OBS[v].n}</button>`).join('')}</div></div>`).join('')}</section>`;
+}
+/* Suivi élève : forme et douleurs notées à l'appel (information, sans effet sur les cibles ni sur le projet) */
+function wellSuivi(sid){
+  const wv = v => v ? `<span class="wv" style="background:${scaleColor(v)};color:${v>=5&&v<=7?'#0A1633':'#fff'}">${v}</span>` : '<span class="muted">—</span>';
+  let rows = '';
+  for (let n = 1; n <= S.settings.nbLessons; n++) { const fb = fbOf(n, sid), dl = dlOf(n, sid), at = attOf(n, sid);
+    if (!fb && !dl.length) continue;
+    rows += `<tr><td><b>L${n}</b><div class="ls-title">${esc(lessonTitle(n))}</div>${at==='inap'?'<span class="tag inapte">Inapte</span>':''}</td><td class="c">${wv(fb)}${fb ? ` <small>${esc(SCALES.forme[fb-1][0] + ' ' + SCALES.forme[fb-1][1])}</small>` : ''}</td><td>${dl.length ? esc(dl.map(zoneName).join(', ')) : '—'}</td></tr>`; }
+  return rows ? `<div class="card strong"><h2>💪 Forme et douleurs (appel)</h2><div class="pj-table-wrap"><table class="pj-table"><tr><th>Leçon</th><th>💪 Forme</th><th>🩹 Douleurs</th></tr>${rows}</table></div></div>` : '';
 }
 /* Forme + douleurs pendant l'appel (prof) */
 function appelWellModal(sid){
@@ -792,14 +804,14 @@ function makeTestClass(){
     ['R','Grégory'],['M','Pierre'],['D','Yohann'],['L','Fabienne'],['B','Emilie'],['D','Anne Laure'],['G','Romain'],['D','Jovany'],['J','Emilie'],['G','Simon'],
     ['L','Solène'],['R','Paul Vincent'],['L','Caroline'],['L','Thibault'],['M','Romain'],['A','Jean Philippe'],['G','Jérôme'],['C','Nicolas'],['G','Guillaume'],['P','Sophie'],
     ['F','Nélia'],['B','Solène'],['S','Gwenaëlle'],['F','Thibaut'],['B','Yann'],['V','Murat'],['R','Yann'],['B','Sébastien'],['L','Mathias']];
-  const NB_GROUPS = 10;
+  const NB_GROUPS = 2;
   const old = Object.values(ROOT.classes).find(c => c.settings.className === 'Classe Test');
   const c = newClassState('Classe Test', old ? old.id : undefined);
   ROOT.classes[c.id] = c; useClass(c.id);
   const st = S.settings;
   Object.assign(st, { nbLessons:7, baseCourses:6, baseTirs:6, timeS:6, plotsS:8, plotsB:8, firstS:15, firstB:4, stepB:2, nbGroups:NB_GROUPS, current:6 });
   ROSTER.forEach(([nom, prenom]) => S.students.push({ id:newStudentId(), nom, prenom, grp: 0 }));
-  [...S.students].sort(() => Math.random() - .5).forEach((s, i) => s.grp = (i % NB_GROUPS) + 1);   // répartition aléatoire équilibrée (4 ou 3 par groupe)
+  S.students.forEach((s, i) => s.grp = (i % NB_GROUPS) + 1);   // 2 groupes fixés à l'avance (20 / 19), modifiables dans Groupes
   /* L1 diag · L2-L3-L5 : un pilier sprint + un pilier lancer · L4 Bats Ta Performance ! · L6 piliers à choisir · L7 évaluation du projet */
   const plan = { 1:['diag'], 2:['manuel','reag','posl'], 3:['manuel','drt','pous'], 4:['inter'], 5:['manuel','bras','angl'], 6:['manuel','?','?'], 7:['finale'] };
   const snap = id => id === '?' ? '?' : id ? snapTheme(themeById(id) || DEFAULT_THEMES.find(t => t.id === id)) : null;
@@ -859,26 +871,19 @@ function viewProjetDetail(){
     if (n === F) continue;
     const r = res(n, sid) || {}, at = attOf(n, sid);
     const fb = fbOf(n, sid), dl = dlOf(n, sid);
-    const has = vals(r.c).length || vals(r.b).length || fb || r.fa;
+    const has = vals(r.c).length || vals(r.b).length || r.nc != null;
     if (!has && !at) continue;
-    dl.forEach(k => painCount[k] = (painCount[k] || 0) + 1);
-    if (fb) fbs.push(fb); if (r.fa) fas.push(r.fa);
     const cell = a => { const t = targetInfo(n, sid, a).value, v = perf(n, sid, a);
       return `<div class="pj-sc">${t!=null?`<span class="pj-t">🎯${t}</span>`:''}${v.map(x => `<span class="sc ${scoreCls(x, t)}">${x ?? '—'}</span>`).join('')}</div>`; };
     const wv = v => v ? `<span class="wv" style="background:${scaleColor(v)};color:${v>=5&&v<=7?'#0A1633':'#fff'}">${v}</span>` : '<span class="muted">—</span>';
     rows += `<tr><td><b>L${n}</b><div class="ls-title">${esc(lessonTitle(n))}</div>${at==='abs'?'<span class="tag abs">Absent</span>':at==='inap'?'<span class="tag inapte">Inapte</span>':''}</td>
-      <td>${cell('s')}</td><td>${cell('b')}</td><td class="c">${wv(fb)}</td><td>${dl.map(zoneName).join(', ') || '—'}</td><td class="c">${wv(r.fa)}</td><td class="c">${at ? '' : (f => f ? `${compDot(f.lv, null, true)}<div style="font-size:12px">${f.nc != null ? esc(ncName(f.nc)) : ''}</div>` : '—')(frLesson(n, sid))}</td></tr>`;
+      <td>${cell('s')}</td><td>${cell('b')}</td><td class="c">${at ? '' : (f => f ? `${compDot(f.lv, null, true)}<div style="font-size:12px">${f.nc != null ? esc(ncName(f.nc)) : ''}</div>` : '—')(frLesson(n, sid))}</td></tr>`;
   }
   const sum = a => { const g = suggest(sid, a); if (!g) return `<div class="muted">Pas encore de données</div>`;
     return `<div class="pj-sum">Meilleure perf : <b>${pts(g.best)}</b> · Moyenne récente : <b>${fmt(g.moy)}</b> · Cible réussie : <b>${g.rate!=null?Math.round(g.rate*100)+' %':'—'}</b> des tentatives ·
       ${g.trend >= 0.5 ? '📈 en progrès' : g.trend <= -0.5 ? '📉 en baisse' : '➡️ stable'}</div>`; };
-  const SM = !isProfRole() && !rows ? sumOf(sid) : null;   // tablette élève sans historique : bilan reçu avec la séance
-  if (SM) { fbs.length = 0; fas.length = 0; Object.keys(painCount).forEach(k => delete painCount[k]); rows = '';
-    if (SM.fb) fbs.push(SM.fb); if (SM.fa) fas.push(SM.fa); (SM.dl || []).forEach(k => painCount[k] = 1); }
-  const pains = Object.entries(painCount).sort((a,b)=>b[1]-a[1]);
   const choose = a => { const g = suggest(sid, a), cur = D[a==='s'?'cibleS':'cibleB'];
-    let reco = 'conseillee';
-    if (D.formeJ != null && D.formeJ <= 4) reco = 'prudente'; else if (D.formeJ != null && D.formeJ >= 8) reco = 'ambitieuse';
+    const reco = 'conseillee';
     const opt = (k, lbl) => g ? `<button class="pj-opt ${cur===g[k]?'on':''} ${reco===k?'reco':''}" data-action="pjSet" data-a="${a}" data-v="${g[k]}"><small>${lbl}${reco===k?' · conseil':''}</small><b>${pts(g[k])}</b><small>${esc(ACT[a].unit(g[k]))}</small></button>` : '';
     return `<div class="pj-choice"><h3>${ACT[a].ico} Ma cible ${a==='s'?'en sprint':'au tir'}</h3>
       <div class="pj-opts">${opt('prudente','Prudente')}${opt('conseillee','Conseillée')}${opt('ambitieuse','Ambitieuse')}</div>
@@ -886,14 +891,10 @@ function viewProjetDetail(){
   return `<div class="entry-name">${band(sid)}<div class="who">${esc(nameOf(sid))}</div><span class="muted" style="font-weight:800">Projet · évaluation finale (L${F})</span>
       <button class="btn" data-action="go" data-view="projet" style="margin-left:auto">← Retour aux élèves</button></div>
     ${!rows && !isProfRole() ? '' : `<div class="card strong compact"><h2>📋 Mon bilan, leçon par leçon</h2>
-      <div class="pj-table-wrap"><table class="pj-table"><tr><th>Leçon</th><th>🏃 Sprint</th><th>🏀 Tir</th><th>💪 Forme avant</th><th>🩹 Douleurs</th><th>😮‍💨 Forme après</th><th>🔴 Fil rouge</th></tr>${rows || '<tr><td colspan="7" class="muted">Pas encore de données</td></tr>'}</table></div></div>`}
+      <div class="pj-table-wrap"><table class="pj-table"><tr><th>Leçon</th><th>🏃 Sprint</th><th>🏀 Tir</th><th>🔴 Fil rouge</th></tr>${rows || '<tr><td colspan="4" class="muted">Pas encore de données</td></tr>'}</table></div></div>`}
     ${obsBilan(sid) ? `<div class="card strong compact"><h2>👀 Mes critères observés</h2>${obsBilan(sid)}</div>` : ''}
     <div class="card strong compact"><h2>🔎 En résumé</h2>
-      <div><b>🏃 Sprint</b> ${sum('s')}</div><div style="margin-top:6px"><b>🏀 Tir</b> ${sum('b')}</div>
-      <div style="margin-top:6px">💪 Forme avant : <b>${fbs.length?fmt(avg(fbs)):'—'}</b>/10 · 😮‍💨 après : <b>${fas.length?fmt(avg(fas)):'—'}</b>/10
-        ${pains.length?` · 🩹 Douleurs signalées : ${pains.map(([k,c])=>`${esc(zoneName(k))}${SM ? '' : ` (${c})`}`).join(', ')}`:''}</div></div>
-    <div class="card strong compact"><h2>🏁 Aujourd'hui : évaluation finale</h2>
-      ${scale10('Mon état de forme aujourd\'hui', '💪', D.formeJ, `data-action="pjWell" data-f="formeJ"`)}</div>
+      <div><b>🏃 Sprint</b> ${sum('s')}</div><div style="margin-top:6px"><b>🏀 Tir</b> ${sum('b')}</div></div>
     <div class="card strong compact"><div class="pj-choices">${choose('s')}${choose('b')}</div>
       <label class="field" style="margin-top:10px">Mon projet<textarea id="pj-text" style="min-height:70px">${esc(P.texte||'')}</textarea></label>
       <div class="btn-row" style="margin-top:10px"><button class="btn green" data-action="pjSave">💾 Valider mon projet</button>
@@ -963,6 +964,7 @@ function viewStatsDetail(){
     <div class="card"><b>Couleurs : écart entre tes points et ta cible</b>${legend()}</div>
     <div class="stats-cols">${statsColumn(sid, 's')}${statsColumn(sid, 'b')}</div>
     ${obsBilan(sid) ? `<div class="card strong"><h2>👀 Mes critères observés</h2>${obsBilan(sid)}</div>` : ''}
+    ${wellSuivi(sid)}
     <div class="card strong" id="projet"><h2>📝 Mon projet pour la dernière leçon (leçon ${N})</h2>
       
       ${projRow('s')}${projRow('b')}
@@ -977,47 +979,14 @@ function viewStatsDetail(){
    Espace enseignant
    --------------------------------------------------------------------- */
 /* ---------------------------------------------------------------------
-   Compétence D4 : cohérence entre l'effort ressenti (forme notée à l'appel − forme en fin de leçon)
-   et le résultat (écart à la cible)
+   Compétences : niveaux de maîtrise
    --------------------------------------------------------------------- */
 const COMP_LV = [null,
   { n:'Insuffisante', c:'#D0161B', f:'#fff' },
   { n:'Fragile', c:'#F07000', f:'#fff' },
   { n:'Satisfaisante', c:'#86DC96', f:'#0A1633' },
   { n:'Très bonne', c:'#0B4F1C', f:'#fff' }];
-const COMP_D = {
-  D4: { ico:'❤️', t:'Apprendre à entretenir sa santé par une activité physique régulière, raisonnée et raisonnable',
-        s:'Connaître et utiliser des indicateurs objectifs pour caractériser l\'effort physique.' } };
-/* lignes : fatigue ressentie (aucune / modérée / forte) ; colonnes : résultat (sous la cible / proche / au-dessus) */
-const D4_MAT = [[1,2,3],[2,4,3],[3,4,4]];
-const E_TXT = ['aucune fatigue', 'fatigue modérée', 'forte fatigue'], R_TXT = ['sous la cible', 'proche de la cible', 'au-dessus de la cible'];
 function compOf(sid){ S.comp = S.comp || {}; return S.comp[sid] || {}; }
-function persoRef(n, sid, a){                       // sans cible : moyenne de l'élève sur les autres leçons
-  const all = []; for (let k = 1; k <= S.settings.nbLessons; k++) if (k !== n) all.push(...vals(perf(k, sid, a)));
-  return all.length ? avg(all) : null;
-}
-function d4Lesson(n, sid){
-  if (attOf(n, sid)) return null;
-  const r = res(n, sid) || {}, fb = fbOf(n, sid);
-  const ds = [];
-  ['s','b'].forEach(a => { const v = vals(perf(n, sid, a)); if (!v.length) return;
-    const t = targetInfo(n, sid, a).value, ref = t != null ? t : persoRef(n, sid, a);
-    if (ref != null) ds.push(avg(v) - ref); });
-  const R = ds.length ? Math.round(avg(ds) * 10) / 10 : null;   // arrondi au dixième (comme affiché)
-  const E = fb && r.fa ? fb - r.fa : null;
-  if (R == null && E == null && !fb && !r.fa) return null;
-  if (R == null || E == null) return { lv:null, E, R, why: E == null ? 'forme incomplète' : 'pas de résultat' };
-  const eb = E <= 0 ? 0 : E <= 2 ? 1 : 2, rb = R < -1 ? 0 : R < 1 ? 1 : 2;
-  return { lv: D4_MAT[eb][rb], E, R, why: `${E_TXT[eb]} (forme ${fb} → ${r.fa}) · ${R_TXT[rb]} (${R >= 0 ? '+' : ''}${fmt(R)} pt)` };
-}
-function d4Suggest(sid){
-  const w = [0,0,0,0,0], list = [];
-  for (let n = 1; n <= S.settings.nbLessons; n++) { const d = d4Lesson(n, sid); if (d && d.lv) list.push(d.lv); }
-  if (!list.length) return null;
-  list.forEach((lv, i) => w[lv] += 1 + i / list.length);       // les dernières leçons comptent un peu plus
-  let best = 1; for (let k = 2; k <= 4; k++) if (w[k] >= w[best]) best = k;
-  return best;
-}
 const compDot = (lv, sug, big) => lv ? `<span class="cdot ${big?'big':''}" style="background:${COMP_LV[lv].c};color:${COMP_LV[lv].f}" title="${COMP_LV[lv].n}"></span>`
   : sug ? `<span class="cdot sug ${big?'big':''}" style="border-color:${COMP_LV[sug].c};background:${COMP_LV[sug].c}55" title="Proposé : ${COMP_LV[sug].n}"></span>`
   : `<span class="cdot none ${big?'big':''}" title="Non évalué"></span>`;
@@ -1063,12 +1032,11 @@ function profComp(){
   if (!S.students.length) return `<div class="card strong center">Aucun élève</div>`;
   return `<div class="card strong compact"><h2>🎓 Compétences</h2>
       <div class="comp-legend"><b>🔴 Fil rouge</b> · investissement : nombre de courses et écart à la cible, à chaque leçon. Couleur proposée = moyenne des leçons.</div>
-      <div class="comp-legend"><b>D4</b> « ${esc(COMP_D.D4.t)} »<br><i>« ${esc(COMP_D.D4.s)} »</i></div>
       <div class="comp-legend">${[1,2,3,4].map(k => `${compDot(k)} ${COMP_LV[k].n}`).join(' · ')} · ${compDot(null, 3)} proposé par l'appli · ${compDot(null)} non évalué</div></div>
-    ${filterBar()}<div class="tiles">${sortedStudents().filter(passFilter).map(s => { const C = compOf(s.id);
-      return `<button class="tile ${C.FR && C.D4 ? 'done' : ''}" data-action="compDetail" data-sid="${s.id}">${band(s.id)}${C.FR && C.D4 ? '<span class="check">✓</span>' : ''}
+    ${filterBar()}<div class="tiles">${sortedStudents().filter(passFilter).map(s => { const C = compOf(s.id), sg = frSuggest(s.id);
+      return `<button class="tile ${C.FR ? 'done' : ''}" data-action="compDetail" data-sid="${s.id}">${band(s.id)}${C.FR ? '<span class="check">✓</span>' : ''}
         <span class="name">${esc(nameOf(s.id))}</span>
-        <span class="comp-row"><span>🔴 ${compDot(C.FR, frSuggest(s.id))}</span><span>D4 ${compDot(C.D4, d4Suggest(s.id))}</span></span></button>`; }).join('')}</div>`;
+        <span class="comp-row"><span>🔴 ${compDot(C.FR, sg)}</span><span class="muted" style="font-size:14px">${C.FR ? COMP_LV[C.FR].n : sg ? 'proposé : ' + COMP_LV[sg].n : ''}</span></span></button>`; }).join('')}</div>`;
 }
 function compPick(k, title, sub, sug, aid){
   const C = compOf(UI.sid);
@@ -1079,41 +1047,32 @@ function compPick(k, title, sub, sug, aid){
 }
 function profCompDetail(){
   const sid = UI.sid, s = student(sid); if (!s) return profComp();
-  const N = S.settings.nbLessons, sug = d4Suggest(sid), fsug = frSuggest(sid), fm = frMoy(sid);
-  const wv = v => v ? `<span class="wv" style="background:${scaleColor(v)};color:${v>=5&&v<=7?'#0A1633':'#fff'}">${v}</span>` : '<span class="muted">—</span>';
+  const N = S.settings.nbLessons, fsug = frSuggest(sid), fm = frMoy(sid);
   const gap = a => n => { const v = vals(perf(n, sid, a)); if (!v.length) return '<span class="muted">—</span>';
     const t = targetInfo(n, sid, a).value; if (t == null) return `${fmt(avg(v))} <small class="muted">(sans cible)</small>`;
     const d = avg(v) - t; return `<span class="sc ${scoreCls(Math.round(avg(v)), t)}">${d >= 0 ? '+' : ''}${fmt(d)}</span>`; };
   let rows = '';
   for (let n = 1; n <= N; n++) {
-    const at = attOf(n, sid), r = res(n, sid) || {}, fb = fbOf(n, sid), dl = dlOf(n, sid);
-    const has = vals(r.c).length || vals(r.b).length || fb || r.fa || r.nc != null;
+    const at = attOf(n, sid), r = res(n, sid) || {};
+    const has = vals(r.c).length || vals(r.b).length || r.nc != null;
     if (!has && !at) continue;
-    const d = d4Lesson(n, sid), f = frLesson(n, sid);
+    const f = frLesson(n, sid);
     rows += `<tr><td><b>L${n}</b><div class="ls-title">${esc(lessonTitle(n))}</div>${at==='abs'?'<span class="tag abs">Absent</span>':at==='inap'?'<span class="tag inapte">Inapte</span>':''}</td>
       <td class="c">${at ? '' : gap('s')(n)}</td><td class="c">${at ? '' : gap('b')(n)}</td>
-      <td>${f ? `${compDot(f.lv, null, true)} <span class="d4-why">${f.lv ? `<b>${COMP_LV[f.lv].n}</b> · ` : ''}${esc(f.why)}</span>` : ''}</td>
-      <td class="c">${wv(fb)}</td><td>${dl.length ? esc(dl.map(zoneName).join(', ')) : '—'}</td><td class="c">${wv(r.fa)}</td>
-      <td>${d ? `${compDot(d.lv, null, true)} <span class="d4-why">${d.lv ? `<b>${COMP_LV[d.lv].n}</b> · ` : ''}${esc(d.why)}</span>` : ''}</td></tr>`;
+      <td>${f ? `${compDot(f.lv, null, true)} <span class="d4-why">${f.lv ? `<b>${COMP_LV[f.lv].n}</b> · ` : ''}${esc(f.why)}</span>` : ''}</td></tr>`;
   }
   return `<div class="entry-name">${band(sid)}<div class="who">${esc(nameOf(sid))}</div>
       <button class="btn" data-action="profTab" data-tab="comp" style="margin-left:auto">← Retour aux élèves</button></div>
     <div class="card strong compact"><h2>📋 Leçon par leçon</h2>
-      <div class="pj-table-wrap"><table class="pj-table"><tr><th>Leçon</th><th>🏃 Écart cible</th><th>🏀 Écart cible</th><th>🔴 Fil rouge</th><th>💪 Forme (appel)</th><th>🩹 Douleurs</th><th>😮‍💨 Fin de leçon</th><th>❤️ D4 · ressenti / résultat</th></tr>
-        ${rows || '<tr><td colspan="8" class="muted">Pas encore de données</td></tr>'}</table></div>
+      <div class="pj-table-wrap"><table class="pj-table"><tr><th>Leçon</th><th>🏃 Écart cible</th><th>🏀 Écart cible</th><th>🔴 Fil rouge</th></tr>
+        ${rows || '<tr><td colspan="4" class="muted">Pas encore de données</td></tr>'}</table></div>
       <details class="d4-rule"><summary>Comment l'appli calcule le fil rouge</summary>
         <p>Le niveau de la leçon est le plus faible des deux : quantité (nombre de courses) et qualité (écart sous la cible en sprint ; au-dessus de la cible, l'écart compte pour 0). Sans cible, seule la quantité compte.</p>
         <table class="simple"><tr><th></th><th>Courses</th><th>Écart à la cible</th></tr>
           <tr><th>${compDot(4)} Très bonne</th><td>10 et plus</td><td>0,5 et moins</td></tr><tr><th>${compDot(3)} Satisfaisante</th><td>9</td><td>0,6 à 1,5</td></tr>
-          <tr><th>${compDot(2)} Fragile</th><td>7 ou 8</td><td>1,6 à 2,5</td></tr><tr><th>${compDot(1)} Insuffisante</th><td>6 ou moins</td><td>plus de 2,5</td></tr></table></details>
-      <details class="d4-rule"><summary>Comment l'appli calcule D4</summary>
-        <p>Fatigue ressentie = forme notée à l'appel − forme en fin de leçon (0 ou moins : aucune · 1 à 2 : modérée · 3 et plus : forte).<br>
-        Résultat = moyenne des écarts à la cible en points, sprint et tir (moins de −1 : sous la cible · de −1 à +1 : proche · +1 et plus : au-dessus). Sans cible, la référence est la moyenne de l'élève sur les autres leçons.</p>
-        <table class="simple"><tr><th></th><th>Sous la cible</th><th>Proche</th><th>Au-dessus</th></tr>
-          ${D4_MAT.map((row, i) => `<tr><th>${E_TXT[i]}</th>${row.map(v => `<td>${compDot(v)} ${COMP_LV[v].n}</td>`).join('')}</tr>`).join('')}</table></details></div>
-    <div class="card strong compact"><h2>🎓 Couleurs finales (décision de l'enseignant)</h2>
-      ${compPick('FR', '<b>🔴 Fil rouge</b> · investissement', '', fsug, `moyenne des leçons : ${fm != null ? fmt(fm) : '—'} / 4`)}
-      ${compPick('D4', `<b>D4</b> « ${esc(COMP_D.D4.t)} »`, `« ${esc(COMP_D.D4.s)} »`, sug, 'majorité des leçons, les dernières comptent plus')}</div>`;
+          <tr><th>${compDot(2)} Fragile</th><td>7 ou 8</td><td>1,6 à 2,5</td></tr><tr><th>${compDot(1)} Insuffisante</th><td>6 ou moins</td><td>plus de 2,5</td></tr></table></details></div>
+    <div class="card strong compact"><h2>🎓 Couleur finale (décision de l'enseignant)</h2>
+      ${compPick('FR', '<b>🔴 Fil rouge</b> · investissement', '', fsug, `moyenne des leçons : ${fm != null ? fmt(fm) : '—'} / 4`)}</div>`;
 }
 /* ---------------------------------------------------------------------
    Espace enseignant : menu principal + 4 rubriques
@@ -1402,8 +1361,7 @@ function profEleves(){
 function profAppel(){
   const n = curLesson(), L = lesson(n);
   const abs = S.students.filter(s=>attOf(n,s.id)==='abs').length, inap = S.students.filter(s=>attOf(n,s.id)==='inap').length;
-  const nw = S.students.filter(s => (L.wb || {})[s.id]?.fb).length;
-  return `<div class="card strong"><h2>Appel · Leçon ${n}</h2><div class="muted" style="font-weight:700">${S.students.length-abs-inap} présent(s) · ${abs} absent(s) · ${inap} inapte(s) · forme notée : ${nw}/${S.students.length-abs}.</div></div>
+  return `<div class="card strong"><h2>Appel · Leçon ${n}</h2><div class="muted" style="font-weight:700">${S.students.length-abs-inap} présent(s) · ${abs} absent(s) · ${inap} inapte(s) · forme notée : ${S.students.filter(s => (L.wb || {})[s.id]?.fb).length}/${S.students.length-abs}.</div></div>
     <div class="tiles">${sortedStudents().map(s => { const a = attOf(n,s.id);
       const w = (L.wb || {})[s.id] || {}, dl = w.dl || [];
       return `<div class="att-tile ${a==='abs'?'abs':a==='inap'?'inapte':''}">${band(s.id)}<div class="name">${esc(nameOf(s.id))}</div>
@@ -1562,11 +1520,11 @@ function exportXlsx(){
   const r2 = v => v == null ? '' : Math.round(v*100)/100;
   const head = ['Nom', 'Prénom', 'Affiché', 'Groupe'];
   for (let n = 1; n <= N; n++) head.push(`L${n} sprint cible`, `L${n} sprint moy.`, `L${n} basket cible`, `L${n} basket moy.`);
-  head.push('Projet : cible sprint', 'Projet : cible basket', 'Projet : forme du jour', 'Projet : texte', 'D4 proposé', 'D4 final');
+  head.push('Projet : cible sprint', 'Projet : cible basket', 'Projet : texte', 'Fil rouge proposé', 'Fil rouge final');
   const syn = [head];
   let maxA = 0; for (let n = 1; n <= N; n++) maxA = Math.max(maxA, nbAtt(n,'s'), nbAtt(n,'b'));
   const det = [['Nom','Prénom','Leçon','Titre','Statut','Épreuve','Cible (points)','Cible (plot)',
-    ...Array.from({length:maxA},(_,k)=>`Tentative ${k+1}`), 'Moyenne (points)', 'Meilleur (points)', 'Forme (appel) /10', 'Douleurs (appel)', 'Forme fin de leçon /10', 'Pilier', 'Critères observés', 'Courses (fil rouge)', 'Fil rouge de la leçon', 'D4 de la leçon']];
+    ...Array.from({length:maxA},(_,k)=>`Tentative ${k+1}`), 'Moyenne (points)', 'Meilleur (points)', 'Forme (appel) /10', 'Douleurs (appel)', 'Pilier', 'Critères observés', 'Courses (fil rouge)', 'Fil rouge de la leçon']];
   sortedStudents().forEach(s => {
     const nom = s.nom || '', pre = s.prenom || s.disp || '';
     const row = [nom, pre, nameOf(s.id), nbGroups() > 1 && s.grp ? groupName(s.grp) : ''];
@@ -1576,8 +1534,8 @@ function exportXlsx(){
         row.push(num(targetInfo(n, s.id, a).value), at==='abs' ? 'ABS' : at==='inap' ? 'INAPTE' : (v.length ? r2(avg(v)) : '')); });
     }
     const P = S.projects[s.id] || {};
-    const sg = d4Suggest(s.id), fin = compOf(s.id).D4;
-    row.push(num(P.cibleS), num(P.cibleB), num(P.formeJ), P.texte || '', sg ? COMP_LV[sg].n : '', fin ? COMP_LV[fin].n : '');
+    const sg = frSuggest(s.id), fin = compOf(s.id).FR;
+    row.push(num(P.cibleS), num(P.cibleB), P.texte || '', sg ? COMP_LV[sg].n : '', fin ? COMP_LV[fin].n : '');
     syn.push(row);
     for (let n = 1; n <= N; n++) {
       const at = attOf(n, s.id);
@@ -1586,10 +1544,9 @@ function exportXlsx(){
         det.push([nom, pre, n, lessonTitle(n), at==='abs'?'Absent':at==='inap'?'Inapte':'Présent', ACT[a].label,
           num(ti.value), ti.value!=null ? ACT[a].unit(ti.value) : '',
           ...Array.from({length:maxA},(_,k)=> num(p[k])), v.length ? r2(avg(v)) : '', v.length ? Math.max(...v) : '',
-          ...(a === 's' ? [num(fbOf(n, s.id)), dlOf(n, s.id).map(zoneName).join(', '), num((res(n, s.id) || {}).fa)] : ['','','']),
+          ...(a === 's' ? [num(fbOf(n, s.id)), dlOf(n, s.id).map(zoneName).join(', ')] : ['','']),
           ...(th => th ? [th.n, (ob => ob ? th.cr.map((c, i) => `${c} : ${ob[i] ? obsName(ob[i], th) : '—'}`).join(' ; ') : '')(obsOf(n, s.id, a))] : ['',''])(lessonPil(n, a)),
-          ...(a === 's' ? (f => f ? [f.nc != null ? ncName(f.nc) : '', f.lv ? `${COMP_LV[f.lv].n} (${f.why})` : ''] : ['',''])(frLesson(n, s.id)) : ['','']),
-          a === 's' ? (d => d && d.lv ? `${COMP_LV[d.lv].n} (${d.why})` : '')(d4Lesson(n, s.id)) : '']);
+          ...(a === 's' ? (f => f ? [f.nc != null ? ncName(f.nc) : '', f.lv ? `${COMP_LV[f.lv].n} (${f.why})` : ''] : ['',''])(frLesson(n, s.id)) : ['','']),]);
       });
     }
   });
@@ -1601,16 +1558,16 @@ function exportXlsx(){
   {
     const lvN = v => v ? COMP_LV[v].n : '';
     const ch = ['Nom', 'Prénom', 'Groupe'];
-    for (let n = 1; n <= N; n++) ch.push(`L${n} fil rouge`, `L${n} D4`, `L${n} D4 détail`);
-    ch.push('Fil rouge : moyenne /4', 'Fil rouge proposé', 'Fil rouge final', 'D4 proposé', 'D4 final');
+    for (let n = 1; n <= N; n++) ch.push(`L${n} fil rouge`, `L${n} détail`);
+    ch.push('Fil rouge : moyenne /4', 'Fil rouge proposé', 'Fil rouge final');
     const cs = [ch];
     sortedStudents().forEach(s => { const C = compOf(s.id);
       const row = [s.nom || '', s.prenom || s.disp || '', nbGroups() > 1 && s.grp ? groupName(s.grp) : ''];
-      for (let n = 1; n <= N; n++) { const d = d4Lesson(n, s.id), f = frLesson(n, s.id), at = attOf(n, s.id);
-        row.push(at === 'abs' ? 'ABS' : at === 'inap' ? 'INAPTE' : f ? lvN(f.lv) : '', at ? '' : d ? lvN(d.lv) : '', d ? d.why : ''); }
+      for (let n = 1; n <= N; n++) { const f = frLesson(n, s.id), at = attOf(n, s.id);
+        row.push(at === 'abs' ? 'ABS' : at === 'inap' ? 'INAPTE' : f ? lvN(f.lv) : '', f ? f.why : ''); }
       const fm = frMoy(s.id);
-      row.push(fm != null ? Math.round(fm * 100) / 100 : '', lvN(frSuggest(s.id)), lvN(C.FR), lvN(d4Suggest(s.id)), lvN(C.D4)); cs.push(row); });
-    const w3 = XLSX.utils.aoa_to_sheet([...cs, [], ['D4', COMP_D.D4.t], ['', COMP_D.D4.s]]); w3['!cols'] = ch.map((h, i) => ({ wch: /détail/.test(h) ? 40 : i < 3 ? 16 : 14 }));
+      row.push(fm != null ? Math.round(fm * 100) / 100 : '', lvN(frSuggest(s.id)), lvN(C.FR)); cs.push(row); });
+    const w3 = XLSX.utils.aoa_to_sheet(cs); w3['!cols'] = ch.map((h, i) => ({ wch: /détail/.test(h) ? 40 : i < 3 ? 16 : 14 }));
     XLSX.utils.book_append_sheet(wb, w3, 'Compétences');
   }
   {
@@ -2364,7 +2321,7 @@ const A = {
     if (!(await confirmBox('Supprimer « ' + esc(t.n) + ' » ?', 'Les leçons qui utilisent déjà ce pilier le gardent.', 'Supprimer', true))) return;
     ROOT.themes = themes().filter(x => x.id !== d.id); save(); render(); },
   testClass: async () => { const ex = Object.values(ROOT.classes).find(c => c.settings.className === 'Classe Test');
-    const ch = await choiceBox('🧪 Classe Test', '39 élèves répartis au hasard en 10 groupes · 7 leçons, leçon du jour : 6. L1 diagnostic · L2 Réagir vite / Position du lanceur · L3 Courir droit / Pousser vite et fort · L4 Bats Ta Performance ! · L5 Utilisation des bras / Angle d’envol · L6 piliers à choisir · L7 évaluation du projet. 6 sprints de 6 s et 6 lancers, 8 points max.',
+    const ch = await choiceBox('🧪 Classe Test', '39 élèves en 2 groupes · 7 leçons, leçon du jour : 6. L1 diagnostic · L2 Réagir vite / Position du lanceur · L3 Courir droit / Pousser vite et fort · L4 Bats Ta Performance ! · L5 Utilisation des bras / Angle d’envol · L6 piliers à choisir · L7 évaluation du projet. 6 sprints de 6 s et 6 lancers, 8 points max.',
       ex ? [{label:'Ouvrir', value:'open', cls:'primary'}, {label:'Régénérer', value:'new', cls:'orange'}] : [{label:'Créer', value:'new', cls:'primary'}]);
     if (!ch) return; if (ch === 'new') makeTestClass(); else useClass(ex.id); save(); toast('🧪 Classe Test'); render(); },
   compDetail: d => { UI.sid = d.sid; UI.profTab = 'compDetail'; render(); window.scrollTo(0,0); },
@@ -2377,7 +2334,7 @@ const A = {
     UI.draft[k] = clampT(d.a, (UI.draft[k] ?? g?.conseillee ?? Math.ceil(maxPlots(d.a)/2)) + (UI.draft[k] == null ? 0 : +d.d)); render(); },
   pjSave: () => { const D = UI.draft, sid = UI.sid;
     if (D.cibleS == null || D.cibleB == null) return toast('Choisis tes deux cibles');
-    S.projects[sid] = { cibleS: D.cibleS, cibleB: D.cibleB, formeJ: D.formeJ, texte: $('#pj-text').value.trim(), ts: now(), d: S.deviceId };
+    S.projects[sid] = { cibleS: D.cibleS, cibleB: D.cibleB, texte: $('#pj-text').value.trim(), ts: now(), d: S.deviceId };
     save(); toast('✓ Projet enregistré : ce sont tes cibles de l\'évaluation finale', 3500); go('projet'); },
   pickGroup: d => { UI.filter = d.g === 'all' ? 'all' : d.g ? +d.g : null; go('saisie'); },
   selClass: d => { useClass(d.id); UI.filter = null; save(); render(); },
