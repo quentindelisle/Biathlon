@@ -532,3 +532,14 @@ select[disabled]{opacity:.7}
   .nav-bottom .btn{flex:1 1 30%;font-size:14px;min-height:44px;padding:4px 6px}
   .card{padding:10px}
 }
+
+/* v8.2.8 : récupération (colonne « en attente »), statistiques */
+.recup-grid{display:grid;grid-template-columns:minmax(0,3fr) minmax(0,2fr);gap:12px;align-items:start}
+.recup-grid .scan-wrap{max-width:100%}
+.wait-list{display:grid;gap:6px;max-height:70vh;overflow:auto}
+.wait-it{position:relative;display:flex;align-items:center;gap:8px;background:#fff;border:2px solid var(--line);border-radius:10px;padding:6px 10px 6px 18px;font-weight:900;font-size:18px}
+.wait-it .band{position:absolute;left:0;top:0;bottom:0;width:10px;border-radius:8px 0 0 8px}
+.wait-it .wn{flex:1}
+.wait-it .wi{font-size:22px;letter-spacing:4px}
+.tile.has-data{border-color:var(--green)}
+@media (max-width:900px){ .recup-grid{grid-template-columns:1fr} }

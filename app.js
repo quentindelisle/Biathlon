@@ -10,7 +10,7 @@
    ===================================================================== */
 'use strict';
 
-const APP_VERSION = '8.2.7';
+const APP_VERSION = '8.2.8';
 const STORE_KEY = 'neps_biathlon5s_v2';
 const QR_CHUNK = 440;           // caractères base45 par QR (QR version 11 max : facile à lire par une caméra)
 
@@ -651,7 +651,7 @@ function obsBlock(n, sid, a){
   if (isTraj(th)) return `<section class="obs-sec on"><h2>👀 ${ACT[a].ico} ${esc(th.n)} · quelle trajectoire de balle ?</h2>
     <div class="traj-btns">${[1,2,3,4].map(v => `<button class="trbtn ${ob[0]===v?'on':''}" style="--cc:${OBS[v].c}" data-action="obs" data-a="${a}" data-i="0" data-v="${v}">${trajSVG(v, 150)}<span>${TRAJ[v].n}</span></button>`).join('')}</div></section>`;
   return `<section class="obs-sec on"><h2>👀 ${ACT[a].ico} ${esc(th.n)} · ce que l'observateur a vu</h2>
-    ${th.cr.map((c, i) => `<div class="obs-row"><div class="obs-c">${esc(c)}</div><div class="obs-btns">${[4,3,2,1].map(v =>
+    ${th.cr.map((c, i) => `<div class="obs-row"><div class="obs-c">${esc(c)}</div><div class="obs-btns">${[1,2,3,4].map(v =>
       `<button class="obtn ${ob[i]===v?'on':''}" style="--cc:${OBS[v].c};--cf:${OBS[v].f}" data-action="obs" data-a="${a}" data-i="${i}" data-v="${v}">${OBS[v].n}</button>`).join('')}</div></div>`).join('')}</section>`;
 }
 /* Suivi élève : forme et douleurs notées à l'appel (information, sans effet sur les cibles ni sur le projet) */
@@ -901,15 +901,20 @@ function viewProjetDetail(){
 /* ---------------------------------------------------------------------
    Statistiques
    --------------------------------------------------------------------- */
-function lastAvg(sid, a){ let m = null; for (let k = 2; k <= S.settings.nbLessons; k++) { const v = vals(perf(k, sid, a)); if (v.length) m = avg(v); } return m; }
+function lastAvg(sid, a){ let m = null; for (let k = 1; k <= S.settings.nbLessons; k++) { const v = vals(perf(k, sid, a)); if (v.length) m = avg(v); } return m; }
 function viewStatsTiles(){
   if (!S.students.length) return `<div class="card strong center">Aucun élève.</div>`;
   const n = curLesson();
-  return `${filterBar()}<div class="tiles">${sortedStudents().filter(passFilter).map(s => {
-    const ms = lastAvg(s.id, 's'), mb = lastAvg(s.id, 'b');
-    return `<button class="tile" data-action="statsDetail" data-sid="${s.id}">${band(s.id)}
+  const hasData = sid => { for (let k = 1; k <= S.settings.nbLessons; k++) { const r = res(k, sid); if (r && (vals(r.c).length || vals(r.b).length)) return true; } return false; };
+  const list = sortedStudents().filter(passFilter), withD = list.filter(s => hasData(s.id)), without = list.filter(s => !hasData(s.id));
+  const tile = s => { const ms = lastAvg(s.id, 's'), mb = lastAvg(s.id, 'b'), fm = frMoy(s.id);
+    return `<button class="tile ${hasData(s.id) ? 'has-data' : 'off'}" data-action="statsDetail" data-sid="${s.id}">${band(s.id)}
       <span class="name">${esc(nameOf(s.id))}</span>${tileTarget(n, s.id, 's')}${tileTarget(n, s.id, 'b')}
-      <span class="meta">${ms!=null||mb!=null?`Dernières moyennes : 🏃 ${fmt(ms)} · 🏀 ${fmt(mb)}`:'Pas encore de leçon après le test'}</span></button>`; }).join('')}</div>`;
+      <span class="meta">${ms!=null||mb!=null?`Dernières moyennes : 🏃 ${fmt(ms)} · 🏀 ${fmt(mb)}${fm != null ? ` · 🔴 ${compDot(Math.round(fm))}` : ''}`:'Pas encore de données'}</span></button>`; };
+  return `${filterBar()}
+    <div class="card compact"><b>📊 ${withD.length} élève(s) avec des statistiques</b>${without.length ? ` · <span class="muted">${without.length} sans données (en bas)</span>` : ''}</div>
+    <div class="tiles">${withD.map(tile).join('')}</div>
+    ${without.length ? `<h3 class="muted" style="margin-top:16px">Pas encore de données</h3><div class="tiles">${without.map(tile).join('')}</div>` : ''}`;
 }
 function barChart(items, max, cls=''){
   return `<div class="bar-chart ${cls}">${items.map(it => `<div class="col">
@@ -1198,14 +1203,23 @@ function profSeanceQR(){
       <div class="advice info">Sur chaque tablette élève : <b>📷 1. Scanner la séance</b>. Faites l'appel et vérifiez les cibles <b>avant</b> d'afficher ce QR.</div>
       <div id="qr-seance" class="center">Préparation…</div></div>`;
 }
+/* Élèves dont on attend encore des résultats pour la leçon du jour (🏃 et/ou 🏀 manquant) */
+function waitList(){
+  const n = curLesson();
+  const miss = sortedStudents().filter(s => !attOf(n, s.id)).map(s => ({ s, m: ['s','b'].filter(a => nbAtt(n, a) > 0 && vals(perf(n, s.id, a)).length < nbAtt(n, a)) })).filter(x => x.m.length);
+  const pres = S.students.filter(s => !attOf(n, s.id)).length;
+  return `<h2>⏳ En attente de résultats <span class="muted">· ${miss.length}/${pres}</span></h2>
+    ${miss.length ? `<div class="wait-list">${miss.map(({ s, m }) => `<div class="wait-it">${band(s.id)}<span class="wn">${esc(nameOf(s.id))}</span><span class="wi">${m.map(a => ACT[a].ico).join(' ')}</span></div>`).join('')}</div>`
+      : '<div class="advice good">✓ Tous les résultats de la leçon sont arrivés.</div>'}`;
+}
 function profRecup(){
   const n = curLesson();
-  const got = S.students.filter(s => { const r = res(n, s.id); return r && (vals(r.c).length || vals(r.b).length); }).length;
-  return `<div class="card strong"><h2>📥 Scanner les tablettes élèves</h2>
-      <div class="muted" style="font-weight:700">Sur chaque tablette élève : <b>📤 3. Envoyer mes saisies</b>, puis scannez le QR ici. Leçon ${n} : ${got}/${S.students.length} élève(s) avec des saisies.</div>
+  return `<div class="recup-grid"><div class="card strong"><h2>📥 Scanner les tablettes élèves</h2>
+      <div class="muted" style="font-weight:700">Sur chaque tablette élève : <b>📤 3. Envoyer mes saisies</b>, puis scannez le QR ici (leçon ${n}).</div>
       <div id="scan-area"></div>
-      <div class="btn-row" style="justify-content:center;margin-top:12px"><button class="btn primary" data-action="profTab" data-tab="recup">✓ Actualiser le compte</button>
-        <label class="btn">📂 Importer un fichier (.json)<input type="file" id="file-sync" accept=".json,application/json" hidden></label></div></div>`;
+      <div class="btn-row" style="justify-content:center;margin-top:12px"><button class="btn primary" data-action="profTab" data-tab="recup">↻ Actualiser</button>
+        <label class="btn">📂 Importer un fichier (.json)<input type="file" id="file-sync" accept=".json,application/json" hidden></label></div></div>
+    <div class="card strong" id="wait-box">${waitList()}</div></div>`;
 }
 function profTransfert(){
   return `<div class="card"><h2>🔁 Vers une autre tablette enseignant</h2>
@@ -1218,7 +1232,7 @@ function afterProf(){
   if (UI.profTab === 'groupes' || UI.profTab === 'lgroupes') bindGroups();
   if (UI.profTab === 'qr') (async () => { const area = $('#qr-seance'); const payload = await encodeBin(binSeance(curLesson()));
     if (area && UI.profTab === 'qr' && UI.view === 'prof') showQRSeries(chunkQR(payload, 'S', QR_CHUNK), area, `Séance · ${esc(className())} · leçon ${curLesson()}`); })();
-  if (UI.profTab === 'recup') startScan($('#scan-area'), ['R','F'], async p => { await applyPacket(p); return 'continue'; });
+  if (UI.profTab === 'recup') startScan($('#scan-area'), ['R','F'], async p => { await applyPacket(p); const w = $('#wait-box'); if (w) w.innerHTML = waitList(); return 'continue'; });
 }
 function profClasses(){
   const cls = Object.values(ROOT.classes);
