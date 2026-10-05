@@ -10,7 +10,7 @@
    ===================================================================== */
 'use strict';
 
-const APP_VERSION = '8.1.0';
+const APP_VERSION = '8.1.1';
 const STORE_KEY = 'neps_biathlon5s_v2';
 const QR_CHUNK = 440;           // caractères base45 par QR (QR version 11 max : facile à lire par une caméra)
 
@@ -759,16 +759,18 @@ function painModal(){
 function makeTestClass(){
   const R = (a, b) => a + Math.floor(Math.random() * (b - a + 1));
   const pick = arr => arr[Math.floor(Math.random() * arr.length)];
-  const PRENOMS = ['Léa','Hugo','Chloé','Lucas','Inès','Tom','Jade','Nathan','Emma','Louis','Manon','Adam','Zoé','Gabriel','Lina','Raphaël','Camille','Arthur','Rose','Sacha','Mila','Noah','Lou','Maël','Anna','Timéo','Alice','Ethan','Léna','Yanis'];
-  const NOMS = ['MARTIN','BERNARD','DUBOIS','THOMAS','ROBERT','RICHARD','PETIT','DURAND','LEROY','MOREAU','SIMON','LAURENT','LEFEBVRE','MICHEL','GARCIA','DAVID','BERTRAND','ROUX','VINCENT','FOURNIER','MOREL','GIRARD','ANDRE','MERCIER','DUPONT','LAMBERT','BONNET','FRANCOIS','MARTINEZ','LEGRAND'];
+  const ROSTER = [['L','Estelle'],['L','Jean Baptiste'],['B','Damien'],['R','Mathieu'],['P','Julie'],['T','Rémy'],['R','Estelle'],['M','Davy'],['D','Benoit'],['P','Christophe'],
+    ['R','Grégory'],['M','Pierre'],['D','Yohann'],['L','Fabienne'],['B','Emilie'],['D','Anne Laure'],['G','Romain'],['D','Jovany'],['J','Emilie'],['G','Simon'],
+    ['L','Solène'],['R','Paul Vincent'],['L','Caroline'],['L','Thibault'],['M','Romain'],['A','Jean Philippe'],['G','Jérôme'],['C','Nicolas'],['G','Guillaume'],['P','Sophie'],
+    ['F','Nélia'],['B','Solène'],['S','Gwenaëlle'],['F','Thibaut'],['B','Yann'],['V','Murat'],['R','Yann'],['B','Sébastien'],['L','Mathias']];
+  const NB_GROUPS = 10;
   const old = Object.values(ROOT.classes).find(c => c.settings.className === 'Classe Test');
   const c = newClassState('Classe Test', old ? old.id : undefined);
   ROOT.classes[c.id] = c; useClass(c.id);
   const st = S.settings;
-  Object.assign(st, { nbLessons:7, baseCourses:6, baseTirs:6, timeS:6, plotsS:8, plotsB:8, firstS:15, firstB:4, stepB:2, nbGroups:4, current:6 });
-  const prenoms = [...PRENOMS].sort(() => Math.random() - .5).slice(0, 24);
-  prenoms.forEach((p, i) => S.students.push({ id:newStudentId(), nom: NOMS[i], prenom:p, grp: 0 }));
-  [...S.students].sort(() => Math.random() - .5).forEach((s, i) => s.grp = (i % 4) + 1);
+  Object.assign(st, { nbLessons:7, baseCourses:6, baseTirs:6, timeS:6, plotsS:8, plotsB:8, firstS:15, firstB:4, stepB:2, nbGroups:NB_GROUPS, current:6 });
+  ROSTER.forEach(([nom, prenom]) => S.students.push({ id:newStudentId(), nom, prenom, grp: 0 }));
+  [...S.students].sort(() => Math.random() - .5).forEach((s, i) => s.grp = (i % NB_GROUPS) + 1);   // répartition aléatoire équilibrée (4 ou 3 par groupe)
   /* L1 diag · L2 Posture de départ · L3 Premiers appuis · L4 diag intermédiaire · L5 Maintien de la vitesse · L6 thème à choisir · L7 évaluation du projet */
   const plan = { 1:['diag'], 2:['theme','pdep'], 3:['theme','papp'], 4:['inter'], 5:['theme','mvit'], 6:['theme', null], 7:['finale'] };
   for (let n = 1; n <= 7; n++) { const L = lesson(n), [k, th] = plan[n]; L.kind = k; L.title = '';
@@ -2220,7 +2222,7 @@ const A = {
     if (!(await confirmBox('Supprimer « ' + esc(t.n) + ' » ?', 'Les leçons qui utilisent déjà ce thème le gardent.', 'Supprimer', true))) return;
     ROOT.themes = themes().filter(x => x.id !== d.id); save(); render(); },
   testClass: async () => { const ex = Object.values(ROOT.classes).find(c => c.settings.className === 'Classe Test');
-    const ch = await choiceBox('🧪 Classe Test', '24 élèves inventés · 4 groupes · 7 leçons, leçon du jour : 6. L1 diagnostic · L2 Posture de départ · L3 Premiers appuis · L4 diagnostic intermédiaire · L5 Maintien de la vitesse · L6 thème à choisir · L7 évaluation du projet. 6 sprints de 6 s et 6 lancers, 8 points max.',
+    const ch = await choiceBox('🧪 Classe Test', '39 élèves répartis au hasard en 10 groupes · 7 leçons, leçon du jour : 6. L1 diagnostic · L2 Posture de départ · L3 Premiers appuis · L4 diagnostic intermédiaire · L5 Maintien de la vitesse · L6 thème à choisir · L7 évaluation du projet. 6 sprints de 6 s et 6 lancers, 8 points max.',
       ex ? [{label:'Ouvrir', value:'open', cls:'primary'}, {label:'Régénérer', value:'new', cls:'orange'}] : [{label:'Créer', value:'new', cls:'primary'}]);
     if (!ch) return; if (ch === 'new') makeTestClass(); else useClass(ex.id); save(); toast('🧪 Classe Test'); render(); },
   compDetail: d => { UI.sid = d.sid; UI.profTab = 'compDetail'; render(); window.scrollTo(0,0); },
