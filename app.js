@@ -10,7 +10,7 @@
    ===================================================================== */
 'use strict';
 
-const APP_VERSION = '8.4.0';
+const APP_VERSION = '8.4.1';
 const STORE_KEY = 'neps_biathlon5s_v2';
 const QR_CHUNK = 440;           // caractères base45 par QR (QR version 11 max : facile à lire par une caméra)
 
@@ -1235,7 +1235,17 @@ function profMenu(){
       <button class="pm-btn" data-action="profTab" data-tab="recup"><span class="step">3</span><span class="ico">📥</span>Récupérer les saisies<small>Scanner les QR des tablettes élèves</small></button>
       <button class="pm-btn" data-action="profTab" data-tab="statsP"><span class="step">4</span><span class="ico">📊</span>Bilans<small>Statistiques · projets · compétences · export</small></button>
     </div>
-    <div class="btn-row" style="justify-content:center;margin-top:12px"><button class="btn small" data-action="testClass">🧪 Classes de démonstration</button></div>`;
+    <div class="btn-row" style="justify-content:center;margin-top:12px"><button class="btn small" data-action="testClass">🧪 Classes de démonstration</button></div>
+    ${appQRCard()}`;
+}
+/* QR d'accès à l'application (adresse de cette page) : à faire scanner pour installer l'appli sur une tablette */
+const appURL = () => location.href.split('#')[0].split('?')[0].replace(/index\.html$/, '');
+function appQRImg(size=6){ const qr = qrcode(0, 'M'); qr.addData(appURL()); qr.make(); return qr.createDataURL(size, 24); }
+function appQRCard(){
+  if (!/^https?:/.test(location.protocol)) return '';
+  return `<div class="card compact app-qr"><img src="${appQRImg(5)}" alt="QR d'accès à l'application" data-action="appQR">
+    <div><b>📲 Accès à l'application</b><div class="muted" style="font-weight:700">Scannez avec l'appareil photo d'une tablette ou d'un téléphone pour ouvrir l'appli, puis « Ajouter à l'écran d'accueil ».</div>
+      <div class="app-url">${esc(appURL())}</div><button class="btn small" data-action="appQR">🔍 Agrandir</button></div></div>`;
 }
 function profSeanceQR(){
   const n = curLesson(), abs = S.students.filter(s => attOf(n, s.id)).length;
@@ -2365,6 +2375,9 @@ const A = {
     if (PREDIR[d.tab]) { if (d.tab === 'saisieP') UI.filter = null; return go(PREDIR[d.tab]); }
     UI.view = 'prof'; render(); window.scrollTo(0,0); },
   toEleve: () => { ROOT.role = 'eleve'; UI.profUnlocked = false; UI.profTab = 'menu'; save(); go('home'); toast('🧒 Espace élève · retour enseignant : appui long sur le logo'); },
+  appQR: () => { const m = modal(`<h2 class="center">📲 Accès à l'application</h2><div class="center"><img src="${appQRImg(12)}" alt="QR" style="width:min(80vw,460px);height:auto"></div>
+      <p class="center app-url">${esc(appURL())}</p><div class="btn-row" style="justify-content:center"><button class="btn primary" data-close>Fermer</button></div>`, { wide:true });
+    m.querySelector('[data-close]').onclick = closeModal; },
   lockProf: () => { UI.profUnlocked = false; UI.profTab = 'menu'; go('home'); },
   setRole: d => {
     if (d.r === 'prof') return pinPad(() => { ROOT.role = 'prof'; UI.profUnlocked = true; UI.profTab = 'menu'; save(); go('prof'); });

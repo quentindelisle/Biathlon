@@ -567,3 +567,9 @@ select[disabled]{opacity:.7}
 .spe-box{background:#FFF8D6;border:3px solid #E0B400;border-radius:14px;padding:10px 12px;font-size:20px}
 .spe-box .spe-btn{min-height:56px;font-size:20px;padding:6px 22px;border-width:3px}
 .spe-box .spe-btn:not(.on){background:#fff}
+
+/* v8.4.1 : QR d'accès à l'application (menu enseignant) */
+.app-qr{display:flex;gap:14px;align-items:center;margin-top:14px;max-width:760px;margin-left:auto;margin-right:auto}
+.app-qr img{width:150px;height:150px;flex:none;cursor:pointer;image-rendering:pixelated}
+.app-url{font-size:13px;font-weight:700;color:var(--blue);word-break:break-all;margin:6px 0}
+@media (max-width:600px){ .app-qr{flex-direction:column;text-align:center} }
