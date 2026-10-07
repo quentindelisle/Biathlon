@@ -573,3 +573,12 @@ select[disabled]{opacity:.7}
 .app-qr img{width:150px;height:150px;flex:none;cursor:pointer;image-rendering:pixelated}
 .app-url{font-size:13px;font-weight:700;color:var(--blue);word-break:break-all;margin:6px 0}
 @media (max-width:600px){ .app-qr{flex-direction:column;text-align:center} }
+
+/* v8.5.0 : logo carré aux angles arrondis · fil rouge (pelote de laine) */
+.tb-home{border-radius:12px;overflow:hidden;padding:0}
+.tb-home img{border-radius:12px}
+.home-logo{border-radius:22%;box-shadow:0 6px 24px rgba(0,46,110,.18)}
+.fr-strip{display:block;padding:8px 12px}
+.fr-h{display:flex;flex-wrap:wrap;align-items:center;gap:10px;color:#A90F14;font-size:18px}
+.fr-h .fr-moy{margin-left:auto;color:var(--ink)}
+.yarn-svg{display:block;width:100%;height:auto;margin-top:2px}

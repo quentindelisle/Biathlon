@@ -10,7 +10,7 @@
    ===================================================================== */
 'use strict';
 
-const APP_VERSION = '8.4.1';
+const APP_VERSION = '8.5.0';
 const STORE_KEY = 'neps_biathlon5s_v2';
 const QR_CHUNK = 440;           // caractères base45 par QR (QR version 11 max : facile à lire par une caméra)
 
@@ -498,7 +498,6 @@ function viewEntry(){
     h += `</div></div></section>`;
     h += obsBlock(n, sid, a);
   });
-  h += frBlock(n, sid);
   h += `<div class="nav-bottom">
       <button class="btn" data-action="entry" data-sid="${prev?.id||''}" ${prev?'':'disabled'}>← ${prev?esc(nameOf(prev.id)):'Précédent'}</button>
       <button class="btn primary" data-action="go" data-view="saisie">▦ Retour aux élèves</button>
@@ -828,7 +827,7 @@ function demoResult(n, sid, P, last){
   const r = { c: Array.from({length:6}, () => lv(P.lvS)), b: Array.from({length:6}, () => lv(P.lvB)), ts: now() - (last - n) * 7 * 864e5, d: 'test' };
   ['s','b'].forEach(a => { const th = lessonPil(n, a);
     if (th) r[obKey(a)] = th.cr.map(() => Math.max(1, Math.min(4, Math.round(P.motr + n * .1 + Math.random() * 1.6 - .8)))); });
-  r.nc = Math.max(6, Math.min(11, Math.round(P.invest + Math.random() * 2 - 1)));
+  if (n < last && Math.random() < .06) r.c = r.c.slice(0, DEMO_RND(3, 5));      // quelques élèves ne font pas toutes leurs courses
   S.results[n] = S.results[n] || {}; S.results[n][sid] = r;
   if (Math.random() < .06) { const L = lesson(n); L.wb = L.wb || {}; L.wb[sid] = { dl: [DEMO_PICK(ZONES.map(z => z.k))] }; }
 }
@@ -924,13 +923,13 @@ function viewProjetDetail(){
     if (n === F) continue;
     const r = res(n, sid) || {}, at = attOf(n, sid);
     const fb = fbOf(n, sid), dl = dlOf(n, sid);
-    const has = vals(r.c).length || vals(r.b).length || r.nc != null;
+    const has = vals(r.c).length || vals(r.b).length;
     if (!has && !at) continue;
     const cell = a => { const t = targetInfo(n, sid, a).value, v = perf(n, sid, a);
       return `<div class="pj-sc">${t!=null?`<span class="pj-t">🎯${t}</span>`:''}${v.map(x => `<span class="sc ${scoreCls(x, t)}">${x ?? '—'}</span>`).join('')}</div>`; };
     const wv = v => v ? `<span class="wv" style="background:${scaleColor(v)};color:${v>=5&&v<=7?'#0A1633':'#fff'}">${v}</span>` : '<span class="muted">—</span>';
     rows += `<tr><td><b>L${n}</b><div class="ls-title">${esc(lessonTitle(n))}</div>${at==='abs'?'<span class="tag abs">Absent</span>':at==='inap'?'<span class="tag inapte">Inapte</span>':''}</td>
-      <td>${cell('s')}</td><td>${cell('b')}</td><td class="c">${at ? '' : (f => f ? `${compDot(f.lv, null, true)}<div style="font-size:12px">${f.nc != null ? esc(ncName(f.nc)) : ''}</div>` : '—')(frLesson(n, sid))}</td></tr>`;
+      <td>${cell('s')}</td><td>${cell('b')}</td><td class="c">${at ? '' : (f => f ? `${compDot(f.lv, null, true)}<div style="font-size:12px">${f.prox != null ? f.prox + ' %' : ''}</div>` : '—')(frLesson(n, sid))}</td></tr>`;
   }
   const sum = a => { const g = suggest(sid, a); if (!g) return `<div class="muted">Pas encore de données</div>`;
     return `<div class="pj-sum">Meilleure perf : <b>${pts(g.best)}</b> · Moyenne récente : <b>${fmt(g.moy)}</b> · Cible réussie : <b>${g.rate!=null?Math.round(g.rate*100)+' %':'—'}</b> des tentatives ·
@@ -945,7 +944,7 @@ function viewProjetDetail(){
   return `<div class="entry-name">${band(sid)}<div class="who">${esc(nameOf(sid))}</div><span class="muted" style="font-weight:800">Projet · évaluation finale (L${F})</span>
       <button class="btn" data-action="go" data-view="projet" style="margin-left:auto">← Retour aux élèves</button></div>
     ${!rows && !isProfRole() ? '' : `<div class="card strong compact"><h2>📋 Mon bilan, leçon par leçon</h2>
-      <div class="pj-table-wrap"><table class="pj-table"><tr><th>Leçon</th><th>🏃 Sprint</th><th>🏀 Tir</th><th>🔴 Fil rouge</th></tr>${rows || '<tr><td colspan="4" class="muted">Pas encore de données</td></tr>'}</table></div></div>`}
+      <div class="pj-table-wrap"><table class="pj-table"><tr><th>Leçon</th><th>🏃 Sprint</th><th>🏀 Tir</th><th>🧶 Fil rouge</th></tr>${rows || '<tr><td colspan="4" class="muted">Pas encore de données</td></tr>'}</table></div></div>`}
     ${obsBilan(sid) ? `<div class="card strong compact"><h2>👀 Mes critères observés</h2>${obsBilan(sid)}</div>` : ''}
     <div class="card strong compact"><h2>🔎 En résumé</h2>
       <div><b>🏃 Sprint</b> ${sum('s')}</div><div style="margin-top:6px"><b>🏀 Tir</b> ${sum('b')}</div></div>
@@ -969,7 +968,7 @@ function viewStatsTiles(){
   const tile = s => { const ms = lastAvg(s.id, 's'), mb = lastAvg(s.id, 'b'), fm = frMoy(s.id);
     return `<button class="tile ${hasData(s.id) ? 'has-data' : 'off'}" data-action="statsDetail" data-sid="${s.id}">${band(s.id)}
       <span class="name">${esc(nameOf(s.id))}</span>${tileTarget(n, s.id, 's')}${tileTarget(n, s.id, 'b')}
-      <span class="meta">${ms!=null||mb!=null?`Dernières moyennes : 🏃 ${fmt(ms)} · 🏀 ${fmt(mb)}${fm != null ? ` · 🔴 ${compDot(Math.round(fm))}` : ''}`:'Pas encore de données'}</span></button>`; };
+      <span class="meta">${ms!=null||mb!=null?`Dernières moyennes : 🏃 ${fmt(ms)} · 🏀 ${fmt(mb)}${fm != null ? ` · 🧶 ${compDot(Math.round(fm))}` : ''}`:'Pas encore de données'}</span></button>`; };
   return `${filterBar()}
     <div class="card compact"><b>📊 ${withD.length} élève(s) avec des statistiques</b>${without.length ? ` · <span class="muted">${without.length} sans données (en bas)</span>` : ''}</div>
     <div class="tiles">${withD.map(tile).join('')}</div>
@@ -1033,52 +1032,64 @@ const compDot = (lv, sug, big) => lv ? `<span class="cdot ${big?'big':''}" style
   : sug ? `<span class="cdot sug ${big?'big':''}" style="border-color:${COMP_LV[sug].c};background:${COMP_LV[sug].c}55" title="Proposé : ${COMP_LV[sug].n}"></span>`
   : `<span class="cdot none ${big?'big':''}" title="Non évalué"></span>`;
 /* ---------------------------------------------------------------------
-   Fil rouge : l'investissement (nombre de courses × écart à la cible en sprint), évalué à chaque leçon
+   Fil rouge : l'investissement en sprint, évalué à chaque leçon
+   · toutes les courses prévues ne sont pas faites → maîtrise insuffisante
+   · sinon, écart moyen sous la cible sur toutes les courses (au-dessus de la cible = 0) :
+     0,5 et moins → très bonne · 0,6 à 1,5 → satisfaisante · 1,6 à 2,5 → fragile · plus de 2,5 → insuffisante
    --------------------------------------------------------------------- */
-const NC = [[6,'6 ou moins'],[7,'7'],[8,'8'],[9,'9'],[10,'10'],[11,'Plus de 10']];
-const ncName = v => (NC.find(x => x[0] === v) || [0, '—'])[1];
-const FR_Q = nc => nc >= 10 ? 4 : nc === 9 ? 3 : nc >= 7 ? 2 : 1;                 // quantité
-const FR_E = e => e <= 0.5 ? 4 : e <= 1.5 ? 3 : e <= 2.5 ? 2 : 1;                   // qualité (écart sous la cible)
+const FR_E = e => e <= 0.5 ? 4 : e <= 1.5 ? 3 : e <= 2.5 ? 2 : 1;
 function frLesson(n, sid){
   if (attOf(n, sid)) return null;
-  const r = res(n, sid) || {}, v = vals(r.c || []), nc = r.nc ?? null;
-  if (!v.length && nc == null) return null;
+  const v = vals(perf(n, sid, 's')), nb = nbAtt(n, 's');
+  if (!v.length || !nb) return null;
   const t = targetInfo(n, sid, 's').value;
-  const ec = v.length && t != null ? Math.round(Math.max(0, t - avg(v)) * 10) / 10 : null;
-  if (nc == null) return { lv:null, nc, ec, why:'nombre de courses non renseigné' };
-  const q = FR_Q(nc), e = ec == null ? null : FR_E(ec), lv = e == null ? q : Math.min(q, e);
-  return { lv, nc, ec, why: `${nc <= 6 ? '6 courses ou moins' : nc >= 11 ? 'plus de 10 courses' : nc + ' courses'} · ${ec == null ? 'sans cible' : `écart à la cible ${fmt(ec)}`}` };
+  const done = v.length >= nb;
+  if (!done) return n === curLesson() ? { lv:null, why:`en cours : ${v.length}/${nb} courses` } : { lv:1, why:`${v.length}/${nb} courses faites` };
+  if (t == null) return { lv:null, why:`${nb}/${nb} courses · sans cible` };
+  const ec = Math.round(avg(v.map(x => Math.max(0, t - x))) * 10) / 10;
+  const prox = Math.round(avg(v.map(x => Math.min(1, x / t))) * 100);
+  return { lv: FR_E(ec), ec, prox, why:`${nb}/${nb} courses · proximité ${prox} % · écart ${fmt(ec)}` };
 }
 function frSuggest(sid){
   const l = []; for (let n = 1; n <= S.settings.nbLessons; n++) { const f = frLesson(n, sid); if (f && f.lv) l.push(f.lv); }
   return l.length ? Math.max(1, Math.min(4, Math.round(avg(l)))) : null;
 }
 const frMoy = sid => { const l = []; for (let n = 1; n <= S.settings.nbLessons; n++) { const f = frLesson(n, sid); if (f && f.lv) l.push(f.lv); } return l.length ? avg(l) : null; };
+/* dessin : une pelote de laine rouge et son fil, un nœud coloré par leçon */
+function yarnSVG(sid){
+  const cur = curLesson(), N = Math.max(cur, 1), x0 = 66, step = 46, W = x0 + N * step + 10, y = 40;
+  let thread = `M30 ${y+4} C 44 ${y+16}, 52 ${y-8}, ${x0} ${y}`;
+  for (let i = 0; i < N; i++) { const a = x0 + i * step, b = a + step, m = (a + b) / 2; thread += ` S ${m} ${i % 2 ? y - 9 : y + 9}, ${b} ${y}`; }
+  let knots = '';
+  for (let n = 1; n <= N; n++) {
+    const x = x0 + (n - 1) * step + step / 2, f = frLesson(n, sid), at = attOf(n, sid);
+    const fill = at ? '#C9D1E0' : f && f.lv ? COMP_LV[f.lv].c : '#fff';
+    knots += `<g><title>L${n}${at ? (at === 'abs' ? ' · absent' : ' · inapte') : f ? ' · ' + (f.lv ? COMP_LV[f.lv].n + ' · ' : '') + f.why : ''}</title>
+      ${n === cur ? `<circle cx="${x}" cy="${y}" r="17" fill="none" stroke="#F59A1B" stroke-width="3" stroke-dasharray="4 3"/>` : ''}
+      <circle cx="${x}" cy="${y}" r="12" fill="${fill}" stroke="${f && f.lv || at ? '#fff' : '#B0B8C8'}" stroke-width="3" ${f && f.lv || at ? '' : 'stroke-dasharray="3 3"'}/>
+      ${at ? `<text x="${x}" y="${y+5}" text-anchor="middle" font-size="13" font-weight="900" fill="#0A1633">${at === 'abs' ? 'A' : 'I'}</text>` : ''}
+      <text x="${x}" y="13" text-anchor="middle" font-size="13" font-weight="900" fill="#002E6E">L${n}</text></g>`;
+  }
+  return `<svg class="yarn-svg" viewBox="0 0 ${W} 64" style="max-width:${W * 1.25}px">
+    <path d="${thread}" fill="none" stroke="#D0161B" stroke-width="4" stroke-linecap="round"/>
+    <g transform="translate(26 42)"><circle r="19" fill="#E8403B"/><circle r="19" fill="none" stroke="#A90F14" stroke-width="2"/>
+      <path d="M-15 -8 Q 0 -20 15 -6 M-18 2 Q 0 -12 18 4 M-14 11 Q 2 -2 15 12 M-6 -18 Q 8 0 -2 18 M5 -18 Q 16 2 6 18" fill="none" stroke="#FFB3AE" stroke-width="2" stroke-linecap="round"/></g>
+    ${knots}</svg>`;
+}
 /* bandeau « Mon fil rouge » (fiche de l'élève) */
 function frStrip(sid){
-  const N = S.settings.nbLessons, cur = curLesson();
-  let h = '';
-  for (let n = 1; n <= N; n++) { const f = frLesson(n, sid), at = attOf(n, sid);
-    if (n > cur) break;
-    h += `<span class="fr-l ${n === cur ? 'cur' : ''}" title="${f ? esc(f.why) : ''}"><small>L${n}</small>${at ? `<span class="tag ${at==='abs'?'abs':'inapte'}">${at==='abs'?'Abs.':'Inapte'}</span>` : compDot(f?.lv, null, true)}</span>`; }
   const m = frMoy(sid);
-  return `<div class="fr-strip"><b>🔴 Mon fil rouge</b>${h}${m != null ? `<span class="fr-moy">Moyenne : ${compDot(Math.round(m), null, true)} ${COMP_LV[Math.round(m)].n}</span>` : ''}</div>`;
-}
-function frBlock(n, sid){
-  const nc = res(n, sid)?.nc ?? null;
-  return `<section class="obs-sec on fr-sec"><h2>🔴 Fil rouge · combien de courses ${esc(nameOf(sid))} a-t-il/elle faites pendant la leçon ?</h2>
-    <div class="obs-btns">${NC.map(([v, l]) => `<button class="obtn ${nc===v?'on':''}" style="--cc:#0A5BD3;--cf:#fff" data-action="nc" data-v="${v}">${l}</button>`).join('')}</div>
-    ${(f => f && f.lv ? `<div style="margin-top:8px;font-weight:800">${compDot(f.lv, null, true)} ${COMP_LV[f.lv].n} · ${esc(f.why)}</div>` : '')(frLesson(n, sid))}</section>`;
+  return `<div class="fr-strip"><div class="fr-h"><b>Mon fil rouge</b>${m != null ? `<span class="fr-moy">Moyenne : ${compDot(Math.round(m), null, true)} ${COMP_LV[Math.round(m)].n}</span>` : ''}</div>${yarnSVG(sid)}</div>`;
 }
 function profComp(){
   if (!S.students.length) return `<div class="card strong center">Aucun élève</div>`;
   return `<div class="card strong compact"><h2>🎓 Compétences</h2>
-      <div class="comp-legend"><b>🔴 Fil rouge</b> · investissement : nombre de courses et écart à la cible, à chaque leçon. Couleur proposée = moyenne des leçons.</div>
+      <div class="comp-legend"><b>🧶 Fil rouge</b> · investissement en sprint : toutes les courses prévues et proximité de la cible, à chaque leçon. Couleur proposée = moyenne des leçons.</div>
       <div class="comp-legend">${[1,2,3,4].map(k => `${compDot(k)} ${COMP_LV[k].n}`).join(' · ')} · ${compDot(null, 3)} proposé par l'appli · ${compDot(null)} non évalué</div></div>
     ${filterBar()}<div class="tiles">${sortedStudents().filter(passFilter).map(s => { const C = compOf(s.id), sg = frSuggest(s.id);
       return `<button class="tile ${C.FR ? 'done' : ''}" data-action="compDetail" data-sid="${s.id}">${band(s.id)}${C.FR ? '<span class="check">✓</span>' : ''}
         <span class="name">${esc(nameOf(s.id))}</span>
-        <span class="comp-row"><span>🔴 ${compDot(C.FR, sg)}</span><span class="muted" style="font-size:14px">${C.FR ? COMP_LV[C.FR].n : sg ? 'proposé : ' + COMP_LV[sg].n : ''}</span></span></button>`; }).join('')}</div>`;
+        <span class="comp-row"><span>🧶 ${compDot(C.FR, sg)}</span><span class="muted" style="font-size:14px">${C.FR ? COMP_LV[C.FR].n : sg ? 'proposé : ' + COMP_LV[sg].n : ''}</span></span></button>`; }).join('')}</div>`;
 }
 function compPick(k, title, sub, sug, aid){
   const C = compOf(UI.sid);
@@ -1096,7 +1107,7 @@ function profCompDetail(){
   let rows = '';
   for (let n = 1; n <= N; n++) {
     const at = attOf(n, sid), r = res(n, sid) || {};
-    const has = vals(r.c).length || vals(r.b).length || r.nc != null;
+    const has = vals(r.c).length || vals(r.b).length;
     if (!has && !at) continue;
     const f = frLesson(n, sid);
     rows += `<tr><td><b>L${n}</b><div class="ls-title">${esc(lessonTitle(n))}</div>${at==='abs'?'<span class="tag abs">Absent</span>':at==='inap'?'<span class="tag inapte">Inapte</span>':''}</td>
@@ -1106,15 +1117,15 @@ function profCompDetail(){
   return `<div class="entry-name">${band(sid)}<div class="who">${esc(nameOf(sid))}</div>
       <button class="btn" data-action="profTab" data-tab="comp" style="margin-left:auto">← Retour aux élèves</button></div>
     <div class="card strong compact"><h2>📋 Leçon par leçon</h2>
-      <div class="pj-table-wrap"><table class="pj-table"><tr><th>Leçon</th><th>🏃 Écart cible</th><th>🏀 Écart cible</th><th>🔴 Fil rouge</th></tr>
+      <div class="pj-table-wrap"><table class="pj-table"><tr><th>Leçon</th><th>🏃 Écart cible</th><th>🏀 Écart cible</th><th>🧶 Fil rouge</th></tr>
         ${rows || '<tr><td colspan="4" class="muted">Pas encore de données</td></tr>'}</table></div>
       <details class="d4-rule"><summary>Comment l'appli calcule le fil rouge</summary>
-        <p>Le niveau de la leçon est le plus faible des deux : quantité (nombre de courses) et qualité (écart sous la cible en sprint ; au-dessus de la cible, l'écart compte pour 0). Sans cible, seule la quantité compte.</p>
-        <table class="simple"><tr><th></th><th>Courses</th><th>Écart à la cible</th></tr>
-          <tr><th>${compDot(4)} Très bonne</th><td>10 et plus</td><td>0,5 et moins</td></tr><tr><th>${compDot(3)} Satisfaisante</th><td>9</td><td>0,6 à 1,5</td></tr>
-          <tr><th>${compDot(2)} Fragile</th><td>7 ou 8</td><td>1,6 à 2,5</td></tr><tr><th>${compDot(1)} Insuffisante</th><td>6 ou moins</td><td>plus de 2,5</td></tr></table></details></div>
+        <p>Toutes les courses prévues doivent être faites, sinon la leçon est en maîtrise insuffisante. Ensuite, on regarde l'écart moyen sous la cible sur toutes les courses (au-dessus de la cible, l'écart compte pour 0). La proximité affichée est le pourcentage moyen de la cible atteint par course. Sans cible, la leçon n'est pas évaluée.</p>
+        <table class="simple"><tr><th></th><th>Courses prévues</th><th>Écart moyen à la cible</th></tr>
+          <tr><th>${compDot(4)} Très bonne</th><td>toutes faites</td><td>0,5 et moins</td></tr><tr><th>${compDot(3)} Satisfaisante</th><td>toutes faites</td><td>0,6 à 1,5</td></tr>
+          <tr><th>${compDot(2)} Fragile</th><td>toutes faites</td><td>1,6 à 2,5</td></tr><tr><th>${compDot(1)} Insuffisante</th><td>pas toutes faites</td><td>ou plus de 2,5</td></tr></table></details></div>
     <div class="card strong compact"><h2>🎓 Couleur finale (décision de l'enseignant)</h2>
-      ${compPick('FR', '<b>🔴 Fil rouge</b> · investissement', '', fsug, `moyenne des leçons : ${fm != null ? fmt(fm) : '—'} / 4`)}</div>`;
+      ${compPick('FR', '<b>🧶 Fil rouge</b> · investissement', '', fsug, `moyenne des leçons : ${fm != null ? fmt(fm) : '—'} / 4`)}</div>`;
 }
 /* ---------------------------------------------------------------------
    Espace enseignant : menu principal + 4 rubriques
@@ -1587,7 +1598,7 @@ function exportXlsx(){
   const syn = [head];
   let maxA = 0; for (let n = 1; n <= N; n++) maxA = Math.max(maxA, nbAtt(n,'s'), nbAtt(n,'b'));
   const det = [['Nom','Prénom','Leçon','Titre','Statut','Épreuve','Cible (points)','Cible (plot)',
-    ...Array.from({length:maxA},(_,k)=>`Tentative ${k+1}`), 'Moyenne (points)', 'Meilleur (points)', 'Douleurs (appel)', 'Pilier', 'Critères observés', 'Courses (fil rouge)', 'Fil rouge de la leçon']];
+    ...Array.from({length:maxA},(_,k)=>`Tentative ${k+1}`), 'Moyenne (points)', 'Meilleur (points)', 'Douleurs (appel)', 'Pilier', 'Critères observés', 'Proximité de la cible (sprint)', 'Fil rouge de la leçon']];
   sortedStudents().forEach(s => {
     const nom = s.nom || '', pre = s.prenom || s.disp || '';
     const row = [nom, pre, nameOf(s.id), nbGroups() > 1 && s.grp ? groupName(s.grp) : ''];
@@ -1610,7 +1621,7 @@ function exportXlsx(){
           ...Array.from({length:maxA},(_,k)=> num(p[k])), v.length ? r2(avg(v)) : '', v.length ? Math.max(...v) : '',
           a === 's' ? dlOf(n, s.id).map(zoneName).join(', ') : '',
           ...(th => th ? [th.n, (ob => ob ? th.cr.map((c, i) => `${c} : ${ob[i] ? obsName(ob[i], th) : '—'}`).join(' ; ') : '')(obsOf(n, s.id, a))] : ['',''])(lessonPil(n, a)),
-          ...(a === 's' ? (f => f ? [f.nc != null ? ncName(f.nc) : '', f.lv ? `${COMP_LV[f.lv].n} (${f.why})` : ''] : ['',''])(frLesson(n, s.id)) : ['','']),]);
+          ...(a === 's' ? (f => f ? [f.prox != null ? f.prox + ' %' : '', f.lv ? `${COMP_LV[f.lv].n} (${f.why})` : f.why] : ['',''])(frLesson(n, s.id)) : ['','']),]);
       });
     }
   });
@@ -2389,7 +2400,6 @@ const A = {
   well: d => { const n = curLesson(), sid = UI.sid, v = +d.v; setRes(n, sid, r => { r[d.f] = r[d.f] === v ? null : v; }); render(); flagSaved(); },
   painOpen: () => painModal(),
   appelWell: d => appelWellModal(d.sid),
-  nc: d => { const v = +d.v; setRes(curLesson(), UI.sid, r => { r.nc = r.nc === v ? null : v; }); render(); flagSaved(); },
   obs: d => { const n = curLesson(), a = d.a === 'b' ? 'b' : 's', th = lessonPil(n, a); if (!th) return; const i = +d.i, v = +d.v, K = obKey(a);
     setRes(n, UI.sid, r => { const ob = Array.from({length: th.cr.length}, (_, j) => (r[K] || [])[j] ?? null); ob[i] = ob[i] === v ? null : v; r[K] = ob; });
     render(); flagSaved(); },
