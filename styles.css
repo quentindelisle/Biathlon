@@ -1,10 +1,10 @@
 /* Biathlon 5 s – N'EPS numérique – Quentin Delisle
    Thème extérieur : fond clair, textes très foncés, couleurs franches, bordures épaisses */
 :root{
-  --navy:#1D4FA8; --ink:#0A1633; --blue:#2A72E5; --blue-l:#E6F0FF;
-  --orange:#F07000; --orange-l:#FFF0E0; --green:#12813A; --green-l:#E2F6E8;
-  --red:#D0161B; --red-l:#FFE5E5; --yellow:#FFD000; --grey:#5B6478; --line:#C9D1E0;
-  --bg:#F4F7FC; --card:#FFFFFF; --radius:16px;
+  --navy:#0062C4; --ink:#002E6E; --blue:#0088E8; --blue-l:#E3F3FD;
+  --orange:#F59A1B; --orange-l:#FFF3E2; --green:#3A9A1E; --green-l:#E7F5DF;
+  --red:#E8403B; --red-l:#FFE7E5; --yellow:#FFD000; --grey:#5B6478; --line:#C9D1E0;
+  --bg:#F2F9FE; --card:#FFFFFF; --radius:16px;
   --safe-b: env(safe-area-inset-bottom, 0px);
 }
 *{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
@@ -363,7 +363,7 @@ select[disabled]{opacity:.7}
 .sc10-r button.on{transform:scale(1.08);box-shadow:0 0 0 3px var(--ink)}
 .pain-wrap{display:grid;grid-template-columns:260px 1fr;gap:14px;align-items:start}
 .body-svg{width:100%;max-width:260px;display:block;margin:0 auto}
-.body-svg .sil{fill:#DCE2EE;stroke:#1D4FA8;stroke-width:2}
+.body-svg .sil{fill:#DCE2EE;stroke:#0062C4;stroke-width:2}
 .body-svg .bz circle{fill:rgba(10,91,211,.18);stroke:#0A5BD3;stroke-width:2;cursor:pointer}
 .body-svg .bz.on circle{fill:#D0161B;stroke:#7a0b0e}
 .body-svg .lr{font-weight:900;font-size:16px;fill:#5B6478}

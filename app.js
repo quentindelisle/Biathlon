@@ -10,7 +10,7 @@
    ===================================================================== */
 'use strict';
 
-const APP_VERSION = '8.3.2';
+const APP_VERSION = '8.4.0';
 const STORE_KEY = 'neps_biathlon5s_v2';
 const QR_CHUNK = 440;           // caractères base45 par QR (QR version 11 max : facile à lire par une caméra)
 
@@ -511,7 +511,7 @@ function flagSaved(){ const f=$('#saved-flag'); if (f){ f.textContent='✓ Enreg
 const DIAL_START = -135, DIAL_SPAN = 270, CX = 100, CY = 100, DR = 80;
 function pol(r, a){ const t = a*Math.PI/180; return [CX + r*Math.sin(t), CY - r*Math.cos(t)]; }
 function arc(r, a0, a1){ const [x0,y0]=pol(r,a0),[x1,y1]=pol(r,a1); return `M${x0.toFixed(1)} ${y0.toFixed(1)} A${r} ${r} 0 ${a1-a0>180?1:0} 1 ${x1.toFixed(1)} ${y1.toFixed(1)}`; }
-function dialColor(v, t){ return v==null ? '#9AA3B5' : t==null ? '#1D4FA8' : level(v, t).bg; }
+function dialColor(v, t){ return v==null ? '#9AA3B5' : t==null ? '#0062C4' : level(v, t).bg; }
 function dialText(v, t){ return v==null || t==null ? '#fff' : level(v, t).fg; }
 function dialInner(v, max, t, a){
   const col = dialColor(v, t), step = DIAL_SPAN / max;
@@ -521,8 +521,8 @@ function dialInner(v, max, t, a){
   for (let i = 0; i <= max; i++) {
     const ang = DIAL_START + i*step, [x,y] = pol(DR, ang), on = v === i, isT = t === i;
     if (isT) s += `<circle cx="${x.toFixed(1)}" cy="${y.toFixed(1)}" r="${ro+4}" fill="none" stroke="#F07000" stroke-width="4" stroke-dasharray="4 3"/>`;
-    s += `<circle cx="${x.toFixed(1)}" cy="${y.toFixed(1)}" r="${on?ro:rr}" fill="${on?col:'#fff'}" stroke="${on?'#0A1633':'#1D4FA86B'}" stroke-width="2.5"/>
-      <text x="${x.toFixed(1)}" y="${(y+(on?6.5:5)).toFixed(1)}" text-anchor="middle" font-size="${on?fs+3:fs}" fill="${on?dialText(v, t):'#1D4FA8'}">${i}</text>`;
+    s += `<circle cx="${x.toFixed(1)}" cy="${y.toFixed(1)}" r="${on?ro:rr}" fill="${on?col:'#fff'}" stroke="${on?'#0A1633':'#0062C46B'}" stroke-width="2.5"/>
+      <text x="${x.toFixed(1)}" y="${(y+(on?6.5:5)).toFixed(1)}" text-anchor="middle" font-size="${on?fs+3:fs}" fill="${on?dialText(v, t):'#0062C4'}">${i}</text>`;
   }
   s += `<circle cx="100" cy="92" r="30" fill="${v==null?'#fff':col}" stroke="${v==null?'#DCE2EE':'#0A1633'}" stroke-width="2.5"/>
         <text x="100" y="106" text-anchor="middle" font-size="38" fill="${v==null?'#9AA3B5':dialText(v, t)}">${v==null?'–':v}</text>
@@ -751,7 +751,7 @@ function bodySVG(sel){
       <path d="M70 360 Q70 352 80 352 L96 352 L98 372 Q99 384 86 384 L64 384 Q56 384 58 376 Q60 368 70 368 Z" fill="#F07000"/>
       <path d="M130 360 Q130 352 120 352 L104 352 L102 372 Q101 384 114 384 L136 384 Q144 384 142 376 Q140 368 130 368 Z" fill="#F07000"/>
       <!-- short -->
-      <path d="M66 185 L134 185 L138 240 L104 240 L100 212 L96 240 L62 240 Z" fill="#1D4FA8"/>
+      <path d="M66 185 L134 185 L138 240 L104 240 L100 212 L96 240 L62 240 Z" fill="#0062C4"/>
       <!-- bras -->
       <path d="M64 76 Q46 100 42 140 Q38 168 36 190" fill="none" stroke-width="16" stroke="${line}"/>
       <path d="M64 76 Q46 100 42 140 Q38 168 36 190" fill="none" stroke-width="11" stroke="${skin}"/>
