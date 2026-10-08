@@ -10,7 +10,7 @@
    ===================================================================== */
 'use strict';
 
-const APP_VERSION = '8.7.0';
+const APP_VERSION = '8.7.1';
 const STORE_KEY = 'neps_biathlon5s_v2';
 const QR_CHUNK = 440;           // caractères base45 par QR (QR version 11 max : facile à lire par une caméra)
 
@@ -377,7 +377,7 @@ function render(){
   else if (v === 'projet') { if (prof) UI.profTab = 'projetP'; setTop('Projet de l\'élève', 'Évaluation finale', prof ? menuBtn : homeBtn); m.innerHTML = head('bilans') + viewProjetTiles(); }
   else if (v === 'projetDetail') { setTop('Projet · ' + nameOf(UI.sid), '', `<button class="btn small" data-action="go" data-view="projet">▦ Élèves</button>`); m.innerHTML = viewProjetDetail(); }
   else if (v === 'statsDetail') { setTop('Stats · ' + nameOf(UI.sid), '', `<button class="btn small" data-action="go" data-view="stats">▦ Élèves</button>`); m.innerHTML = viewStatsDetail(); }
-  else if (v === 'prof') { setTop('Espace enseignant', lessonLabel(curLesson()), `<button class="btn small" data-action="toEleve" title="Passer en espace élève">🧒</button> <button class="btn small" data-action="lockProf">🔒 Verrouiller</button>`); m.innerHTML = viewProf(); afterProf(); }
+  else if (v === 'prof') { setTop('Espace enseignant', lessonLabel(curLesson()), `<button class="btn small" data-action="toEleve" title="Passer en espace élève">🧒</button>`); m.innerHTML = viewProf(); afterProf(); }
   else if (v === 'send') { setTop('Envoyer mes saisies', 'QR code à scanner par l\'enseignant', homeBtn); m.innerHTML = viewSend(); afterSend(); }
   else if (v === 'receive') { setTop('Scanner la leçon', 'QR affiché par l\'enseignant', homeBtn); m.innerHTML = viewReceive(); afterReceive(); }
 }
@@ -962,7 +962,7 @@ function profRole(){
   if (!n) return `<div class="card">Aucune leçon 💪 Bats Tes Perfs !!! 🚀 dans ce cycle : pas d'évaluation du rôle.</div>`;
   const list = sortedStudents().filter(s => attOf(n, s.id) !== 'abs');
   const done = list.filter(s => roleNote(n, s.id) != null).length;
-  return `<div class="card strong compact"><h2>📝 Évaluation intermédiaire : Rôles dans Bats Tes Perfs ! · L${n}</h2>
+  return `<div class="card strong compact"><h2>📝 Eval Rôles dans Bats Tes Perfs · L${n}</h2>
       <div class="muted" style="font-weight:700">${done}/${list.length} élève(s) évalué(s). Chaque critère vaut 0,5 · 1 · 1,5 · 2 points, soit une note sur 6. Les points • à côté d'un nom indiquent des résultats modifiés sur la tablette élève.</div>
       <details class="d4-rule"><summary>Grille : descripteurs par niveau</summary>
         <table class="simple role-grid"><tr><th></th>${[1,2,3,4].map(v => `<th>${compDot(v)} ${v} — ${COMP_LV[v].n} · ${fmtN(ROLE_PTS[v])} pt</th>`).join('')}</tr>
@@ -1021,15 +1021,18 @@ function profBilanL(){
       ${grp('enc', '💬 À encourager', 'enc', 'En baisse, loin de la cible (1,5 pt et plus) ou douleur signalée.')}</div>`;
 }
 function profRecap(){
-  const B = btpLessons(), F = finaleLesson(), rows = recapRows();
-  const cell = v => v == null ? '<span class="muted">—</span>' : `<b>${fmtN(v)}</b>`;
+  const B = btpLessons(), F = finaleLesson(), rows = recapRows(), RL = roleLesson();
+  const cell = (v, cls) => `<td class="c ${cls}">${v == null ? '<span class="muted">—</span>' : `<b>${fmtN(v)}</b>`}</td>`;
+  const nC = n => n === RL ? 4 : 3;
   return `<div class="card strong compact"><h2>📋 Résultats des évaluations</h2>
-      <div class="muted" style="font-weight:700">Pour Pronote : 💪 Bats Tes Perfs (sprint /5, lancer /5, ⭐ super bonus /5 ; rôle /6 au premier Bats Tes Perfs) et évaluation finale (sprint /6, lancer /6). Également dans l'export Excel (feuille « Résultats évaluations »).</div></div>
-    <div class="pj-table-wrap card"><table class="pj-table recap"><tr><th rowspan="2">Élève</th>${B.map(n => `<th colspan="${n === roleLesson() ? 4 : 3}" class="c">💪 L${n}</th>`).join('')}<th colspan="3" class="c">🏁 Finale L${F}</th></tr>
-      <tr>${B.map(n => '<th>🏃 /5</th><th>🏀 /5</th><th>⭐ /5</th>' + (n === roleLesson() ? '<th>📝 /6</th>' : '')).join('')}<th>🏃 /6</th><th>🏀 /6</th><th>Spé</th></tr>
-      ${rows.map(r => `<tr><td><b>${esc(nameOf(r.s.id))}</b></td>${r.btp.map(x => x.at ? `<td colspan="${x.n === roleLesson() ? 4 : 3}" class="c"><span class="tag ${x.at==='abs'?'abs':'inapte'}">${x.at==='abs'?'Absent':'Inapte'}</span></td>`
-        : `<td class="c">${cell(x.sp?.note)}</td><td class="c">${cell(x.la?.note)}</td><td class="c">${x.bonus ? '<span class="bonus-badge">⭐ 5</span>' : x.bonus === false ? '<span class="muted">non</span>' : '<span class="muted">—</span>'}</td>${x.n === roleLesson() ? `<td class="c">${cell(x.role)}</td>` : ''}`).join('')}
-        <td class="c">${cell(r.fin.sp?.note)}</td><td class="c">${cell(r.fin.la?.note)}</td><td class="c">${r.fin.spe ? ACT[r.fin.spe].ico : '—'}</td></tr>`).join('')}</table></div>`;
+      <div class="muted" style="font-weight:700">Pour Pronote : <span class="rk rk-btp">💪 évaluation intermédiaire</span> sprint /5, lancer /5, ⭐ super bonus /5, rôle /6 (premier Bats Tes Perfs) · <span class="rk rk-fin">🏁 évaluation finale</span> sprint /6, lancer /6. Également dans l'export Excel (feuille « Résultats évaluations »).</div></div>
+    <div class="pj-table-wrap card"><table class="pj-table recap">
+      <tr><th rowspan="2" class="r-name">Élève</th>${B.map(n => `<th colspan="${nC(n)}" class="c g-btp gs">💪 Évaluation intermédiaire · L${n}</th>`).join('')}<th colspan="3" class="c g-fin gs">🏁 Évaluation finale · L${F}</th></tr>
+      <tr>${B.map(n => `<th class="g-btp gs">🏃 /5</th><th class="g-btp">🏀 /5</th><th class="g-btp">⭐ /5</th>${n === RL ? '<th class="g-btp">📝 /6</th>' : ''}`).join('')}<th class="g-fin gs">🏃 /6</th><th class="g-fin">🏀 /6</th><th class="g-fin">Spé</th></tr>
+      ${rows.map(r => `<tr><td class="r-name"><b>${esc(nameOf(r.s.id))}</b></td>${r.btp.map(x => x.at ? `<td colspan="${nC(x.n)}" class="c g-btp gs"><span class="tag ${x.at==='abs'?'abs':'inapte'}">${x.at==='abs'?'Absent':'Inapte'}</span></td>`
+        : `${cell(x.sp?.note, 'g-btp gs')}${cell(x.la?.note, 'g-btp')}<td class="c g-btp">${x.bonus ? '<span class="bonus-badge">⭐ 5</span>' : x.bonus === false ? '<span class="muted">non</span>' : '<span class="muted">—</span>'}</td>${x.n === RL ? cell(x.role, 'g-btp') : ''}`).join('')}
+        ${r.fin.at ? `<td colspan="3" class="c g-fin gs"><span class="tag ${r.fin.at==='abs'?'abs':'inapte'}">${r.fin.at==='abs'?'Absent':'Inapte'}</span></td>`
+          : `${cell(r.fin.sp?.note, 'g-fin gs')}${cell(r.fin.la?.note, 'g-fin')}<td class="c g-fin">${r.fin.spe ? ACT[r.fin.spe].ico : '—'}</td>`}</tr>`).join('')}</table></div>`;
 }
 const finaleLesson = () => { for (let k = 1; k <= S.settings.nbLessons; k++) if (isFinale(k)) return k; return S.settings.nbLessons; };
 function suggest(sid, a){
@@ -1345,7 +1348,7 @@ const PSECT = {
   prep:   { ico:'🛠', t:'Préparer le cycle', tabs:[['classes','👥 Classe & élèves'],['groupes','🎽 Groupes'],['cycle','⚙️ Paramètres du cycle'],['themes','🏛 Piliers']] },
   jour:   { ico:'📅', t:'Leçon du jour', tabs:[['appel','✅ Appel'],['lgroupes','🎽 Groupes du jour'],['cibles','🎯 Cibles'],['qr','📲 QR de la leçon'],['saisieP','✍️ Saisie (dépannage)']] },
   recup:  { ico:'📥', t:'Récupérer les saisies', tabs:[] },
-  bilans: { ico:'📊', t:'Évaluations et Bilans', tabs:[['bilanL','🔎 Bilan par leçon'],['statsP','📊 Statistiques'],['role','📝 Évaluation intermédiaire : Rôles dans Bats Tes Perfs !'],['recap','📋 Résultats des évaluations'],['projetP','🎯 Projets'],['comp',`${yarnIcon(20)} Fil Rouge`],['export','📁 Export & sauvegarde']] } };
+  bilans: { ico:'📊', t:'Évaluations et Bilans', tabs:[['bilanL','🔎 Bilan par leçon'],['statsP','📊 Statistiques'],['role','📝 Eval Rôles dans Bats Tes Perfs'],['recap','📋 Résultats des évaluations'],['projetP','🎯 Projets'],['comp',`${yarnIcon(20)} Fil Rouge`],['export','📁 Export & sauvegarde']] } };
 const PREDIR = { saisieP:'saisie', statsP:'stats', projetP:'projet' };
 function sectOf(tab){ if (tab === 'compDetail') return 'bilans'; if (tab === 'recup') return 'recup'; return Object.keys(PSECT).find(k => PSECT[k].tabs.some(t => t[0] === tab)) || null; }
 function sectHeader(sec){

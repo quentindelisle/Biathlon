@@ -611,3 +611,14 @@ table.recap th,table.recap td{white-space:nowrap}
 .bl-it span{font-size:13px;font-weight:700;color:var(--grey)}
 .mod-dots{color:#E8403B;font-weight:900;letter-spacing:2px;font-size:20px;vertical-align:middle}
 @media (max-width:900px){ .bl-grid{grid-template-columns:1fr} }
+
+/* v8.7.1 : résultats des évaluations (intermédiaire / finale bien séparées) */
+table.recap td.g-btp,table.recap th.g-btp{background:#FFF1DC}
+table.recap tr:nth-child(odd) td.g-btp{background:#FFE7C4}
+table.recap td.g-fin,table.recap th.g-fin{background:#E3F1FD}
+table.recap tr:nth-child(odd) td.g-fin{background:#CFE6FA}
+table.recap th.g-btp{color:#8A4B00} table.recap th.g-fin{color:#004A8F}
+table.recap .gs{border-left:4px solid #0A1633}
+table.recap .r-name{background:#fff;position:sticky;left:0;z-index:1}
+.rk{display:inline-block;padding:1px 8px;border-radius:8px;font-weight:900}
+.rk-btp{background:#FFE7C4;color:#8A4B00} .rk-fin{background:#CFE6FA;color:#004A8F}
