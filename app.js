@@ -10,7 +10,7 @@
    ===================================================================== */
 'use strict';
 
-const APP_VERSION = '8.7.1';
+const APP_VERSION = '8.7.2';
 const STORE_KEY = 'neps_biathlon5s_v2';
 const QR_CHUNK = 440;           // caractères base45 par QR (QR version 11 max : facile à lire par une caméra)
 
@@ -1023,14 +1023,14 @@ function profBilanL(){
 function profRecap(){
   const B = btpLessons(), F = finaleLesson(), rows = recapRows(), RL = roleLesson();
   const cell = (v, cls) => `<td class="c ${cls}">${v == null ? '<span class="muted">—</span>' : `<b>${fmtN(v)}</b>`}</td>`;
-  const nC = n => n === RL ? 4 : 3;
-  return `<div class="card strong compact"><h2>📋 Résultats des évaluations</h2>
-      <div class="muted" style="font-weight:700">Pour Pronote : <span class="rk rk-btp">💪 évaluation intermédiaire</span> sprint /5, lancer /5, ⭐ super bonus /5, rôle /6 (premier Bats Tes Perfs) · <span class="rk rk-fin">🏁 évaluation finale</span> sprint /6, lancer /6. Également dans l'export Excel (feuille « Résultats évaluations »).</div></div>
+  const sum10 = x => x.sp && x.la ? x.sp.note + x.la.note : null;
+  const nC = n => n === RL ? 5 : 4;
+  return `<div class="card strong compact"><h2>📋 Résultats des évaluations</h2></div>
     <div class="pj-table-wrap card"><table class="pj-table recap">
       <tr><th rowspan="2" class="r-name">Élève</th>${B.map(n => `<th colspan="${nC(n)}" class="c g-btp gs">💪 Évaluation intermédiaire · L${n}</th>`).join('')}<th colspan="3" class="c g-fin gs">🏁 Évaluation finale · L${F}</th></tr>
-      <tr>${B.map(n => `<th class="g-btp gs">🏃 /5</th><th class="g-btp">🏀 /5</th><th class="g-btp">⭐ /5</th>${n === RL ? '<th class="g-btp">📝 /6</th>' : ''}`).join('')}<th class="g-fin gs">🏃 /6</th><th class="g-fin">🏀 /6</th><th class="g-fin">Spé</th></tr>
+      <tr>${B.map(n => `<th class="g-btp gs nt">🏃 /5</th><th class="g-btp nt">🏀 /5</th><th class="g-btp moy">Moy. /10</th>${n === RL ? '<th class="g-btp">📝 Rôle /6</th>' : ''}<th class="g-btp opt">⭐ Super bonus /5<br><small>facultatif</small></th>`).join('')}<th class="g-fin gs">🏃 /6</th><th class="g-fin">🏀 /6</th><th class="g-fin">Spé</th></tr>
       ${rows.map(r => `<tr><td class="r-name"><b>${esc(nameOf(r.s.id))}</b></td>${r.btp.map(x => x.at ? `<td colspan="${nC(x.n)}" class="c g-btp gs"><span class="tag ${x.at==='abs'?'abs':'inapte'}">${x.at==='abs'?'Absent':'Inapte'}</span></td>`
-        : `${cell(x.sp?.note, 'g-btp gs')}${cell(x.la?.note, 'g-btp')}<td class="c g-btp">${x.bonus ? '<span class="bonus-badge">⭐ 5</span>' : x.bonus === false ? '<span class="muted">non</span>' : '<span class="muted">—</span>'}</td>${x.n === RL ? cell(x.role, 'g-btp') : ''}`).join('')}
+        : `${cell(x.sp?.note, 'g-btp gs nt')}${cell(x.la?.note, 'g-btp nt')}${cell(sum10(x), 'g-btp moy')}${x.n === RL ? cell(x.role, 'g-btp') : ''}<td class="c g-btp opt">${x.bonus ? '<span class="bonus-badge">⭐ 5</span>' : x.bonus === false ? '<span class="muted">non</span>' : '<span class="muted">—</span>'}</td>`).join('')}
         ${r.fin.at ? `<td colspan="3" class="c g-fin gs"><span class="tag ${r.fin.at==='abs'?'abs':'inapte'}">${r.fin.at==='abs'?'Absent':'Inapte'}</span></td>`
           : `${cell(r.fin.sp?.note, 'g-fin gs')}${cell(r.fin.la?.note, 'g-fin')}<td class="c g-fin">${r.fin.spe ? ACT[r.fin.spe].ico : '—'}</td>`}</tr>`).join('')}</table></div>`;
 }
@@ -1803,14 +1803,14 @@ function exportXlsx(){
   }
   {                                                    // récapitulatif des notes (Pronote)
     const B = btpLessons(), F = finaleLesson(), h = ['Nom', 'Prénom', 'Groupe'];
-    B.forEach(n => h.push(`L${n} BTP sprint /5`, `L${n} BTP lancer /5`, `L${n} super bonus /5`, ...(n === roleLesson() ? [`L${n} rôle /6`, `L${n} rôle placement`, `L${n} rôle fiabilité`, `L${n} rôle lisibilité`] : [])));
+    B.forEach(n => h.push(`L${n} BTP sprint /5`, `L${n} BTP lancer /5`, `L${n} BTP moyenne /10`, ...(n === roleLesson() ? [`L${n} rôle /6`, `L${n} rôle placement`, `L${n} rôle fiabilité`, `L${n} rôle lisibilité`] : []), `L${n} super bonus /5 (facultatif)`));
     h.push(`Finale L${F} sprint /6`, `Finale L${F} lancer /6`, 'Spé');
     const rr = [h];
     recapRows().forEach(r => { const s = r.s, row = [s.nom || '', s.prenom || s.disp || '', nbGroups() > 1 && s.grp ? groupName(s.grp) : ''];
       r.btp.forEach(x => { const ro = roleOf(x.n, s.id);
         const isR = x.n === roleLesson();
-        if (x.at) row.push(x.at === 'abs' ? 'ABS' : 'INAPTE', '', '', ...(isR ? ['', '', '', ''] : []));
-        else row.push(x.sp ? x.sp.note : '', x.la ? x.la.note : '', x.bonus ? 5 : '', ...(isR ? [x.role ?? '', ...ROLE_CR.map(c => ro[c.k] ? ROLE_PTS[ro[c.k]] : '')] : [])); });
+        if (x.at) row.push(x.at === 'abs' ? 'ABS' : 'INAPTE', '', '', ...(isR ? ['', '', '', ''] : []), '');
+        else row.push(x.sp ? x.sp.note : '', x.la ? x.la.note : '', x.sp && x.la ? x.sp.note + x.la.note : '', ...(isR ? [x.role ?? '', ...ROLE_CR.map(c => ro[c.k] ? ROLE_PTS[ro[c.k]] : '')] : []), x.bonus ? 5 : ''); });
       row.push(r.fin.sp ? r.fin.sp.note : '', r.fin.la ? r.fin.la.note : '', r.fin.spe === 's' ? 'Sprint' : r.fin.spe === 'b' ? 'Lancer' : '');
       rr.push(row); });
     const w5 = XLSX.utils.aoa_to_sheet(rr); w5['!cols'] = h.map((x, i) => ({ wch: i < 3 ? 16 : 13 }));

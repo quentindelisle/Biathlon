@@ -622,3 +622,9 @@ table.recap .gs{border-left:4px solid #0A1633}
 table.recap .r-name{background:#fff;position:sticky;left:0;z-index:1}
 .rk{display:inline-block;padding:1px 8px;border-radius:8px;font-weight:900}
 .rk-btp{background:#FFE7C4;color:#8A4B00} .rk-fin{background:#CFE6FA;color:#004A8F}
+/* v8.7.2 — résultats : sprint/lancer resserrés, moyenne /10, bonus facultatif */
+table.recap .nt{padding-left:6px;padding-right:6px;min-width:0}
+table.recap th.moy,table.recap td.moy{border-left:2px dashed #C98A2E;font-size:1.08em}
+table.recap td.moy b{color:#8A4B00}
+table.recap .opt{border-left:2px dashed #C98A2E}
+table.recap th.opt small{font-weight:700;font-style:italic;opacity:.8}
