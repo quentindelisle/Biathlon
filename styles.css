@@ -582,3 +582,20 @@ select[disabled]{opacity:.7}
 .fr-h{display:flex;flex-wrap:wrap;align-items:center;gap:10px;color:#A90F14;font-size:18px}
 .fr-h .fr-moy{margin-left:auto;color:var(--ink)}
 .yarn-svg{display:block;width:100%;height:auto;margin-top:2px}
+
+/* v8.6.0 : Bats Tes Perfs (notes, super bonus, rôle, récap) */
+.btp-card h2{margin-top:0}
+.note-box.bonus{background:linear-gradient(135deg,#FFE680,#FFC400);border-color:#B88A00}
+.bonus-badge{display:inline-block;background:#FFC400;border:2px solid #B88A00;border-radius:10px;padding:2px 8px;font-weight:900}
+.role-list{display:grid;gap:8px}
+.role-row{position:relative;display:grid;grid-template-columns:minmax(120px,1.2fr) repeat(3,minmax(0,1fr));gap:8px;align-items:center;background:#fff;border:2px solid var(--line);border-radius:12px;padding:8px 10px 8px 20px}
+.role-row .band{position:absolute;left:0;top:0;bottom:0;width:10px;border-radius:10px 0 0 10px}
+.role-name{font-weight:900;font-size:18px}
+.role-tot{font-size:14px;color:var(--blue)}
+.role-cr small{font-weight:800;color:var(--grey)}
+.role-btns{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:4px}
+.rbtn{min-height:40px;border-radius:8px;border:3px solid var(--cc);background:#fff;font-weight:900;font-size:14px;color:#0A1633;padding:0}
+.rbtn.on{background:var(--cc);color:var(--cf);box-shadow:0 0 0 2px #0A1633}
+.role-grid td,.role-grid th{font-size:13px;vertical-align:top}
+table.recap th,table.recap td{white-space:nowrap}
+@media (max-width:700px){ .role-row{grid-template-columns:1fr} }

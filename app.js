@@ -10,7 +10,7 @@
    ===================================================================== */
 'use strict';
 
-const APP_VERSION = '8.5.0';
+const APP_VERSION = '8.6.0';
 const STORE_KEY = 'neps_biathlon5s_v2';
 const QR_CHUNK = 440;           // caractères base45 par QR (QR version 11 max : facile à lire par une caméra)
 
@@ -498,6 +498,7 @@ function viewEntry(){
     h += `</div></div></section>`;
     h += obsBlock(n, sid, a);
   });
+  h += btpCard(n, sid, true);
   h += `<div class="nav-bottom">
       <button class="btn" data-action="entry" data-sid="${prev?.id||''}" ${prev?'':'disabled'}>← ${prev?esc(nameOf(prev.id)):'Précédent'}</button>
       <button class="btn primary" data-action="go" data-view="saisie">▦ Retour aux élèves</button>
@@ -834,7 +835,7 @@ function demoResult(n, sid, P, last){
 /* « Formateurs » : 39 élèves, 2 groupes, 7 leçons ; leçon du jour : L4 Bats Tes Perfs !!! (L1 à L3 saisies, aucun absent) */
 function makeFormateurs(){
   demoClass('Formateurs', ['Classe Test'], DEMO_ROSTER, 7, 4, {
-    1:['diag',null,null,'none'], 2:['manuel','reag','posl','diag'], 3:['manuel','drt','pous','diag'], 4:['inter',null,null,'none'],
+    1:['diag',null,null,'none'], 2:['manuel','reag','posl','diag'], 3:['manuel','drt','pous','diag'], 4:['inter',null,null,'diag'],
     5:['manuel','bras','angl','inter'], 6:['manuel','?','?','inter'], 7:['finale',null,null,'projet'] });
   S.students.forEach(s => { const P = demoProfile(true); for (let n = 1; n <= 3; n++) demoResult(n, s.id, P, 4); });
   save();
@@ -842,13 +843,13 @@ function makeFormateurs(){
 /* « Complet » : 20 élèves, cycle de 12 leçons terminé, très peu d'absents / inaptes, projets du prudent au risqué */
 function makeComplet(){
   demoClass('Complet', [], DEMO_COMPLET, 12, 12, {
-    1:['diag',null,null,'none'], 2:['manuel','reag','posl','diag'], 3:['manuel','drt','pous','diag'], 4:['inter',null,null,'none'],
-    5:['manuel','bras','angl','inter'], 6:['manuel','fin','posl','inter'], 7:['manuel','reag','pous','inter'], 8:['inter',null,null,'none'],
+    1:['diag',null,null,'none'], 2:['manuel','reag','posl','diag'], 3:['manuel','drt','pous','diag'], 4:['inter',null,null,'diag'],
+    5:['manuel','bras','angl','inter'], 6:['manuel','fin','posl','inter'], 7:['manuel','reag','pous','inter'], 8:['inter',null,null,'diag'],
     9:['manuel','drt','angl','inter'], 10:['manuel','bras','pous','inter'], 11:['manuel','fin','angl','inter'], 12:['finale',null,null,'projet'] });
   const PROFILS = [['prudente','Je veux être sûr de réussir ma cible.'], ['conseillee','Je suis la cible conseillée, je pense pouvoir la tenir.'],
     ['ambitieuse','Je vise haut, je me sens en progrès.'], ['risque','Je tente le tout pour le tout !']];
   const prof = {};
-  S.students.forEach((s, i) => { const P = prof[s.id] = demoProfile(false);
+  S.students.forEach((s, i) => { const P = prof[s.id] = demoProfile(false); if (i % 6 === 0) P.prog = .4;   // quelques élèves en gros progrès (super bonus)
     for (let n = 1; n <= 11; n++) { const x = Math.random(), L = lesson(n);
       if (x < .02) { L.att[s.id] = 'abs'; continue; }
       if (x < .03) { L.att[s.id] = 'inap'; continue; }
@@ -860,6 +861,9 @@ function makeComplet(){
     S.projects[s.id] = { cibleS: tg('s'), cibleB: tg('b'), spe, texte, ts: now() - 864e5, d: 'test' };
     demoResult(12, s.id, P, 12);
   });
+  [4, 8].forEach(n => { const L = lesson(n); L.role = {};                         // évaluation du rôle (enseignant)
+    S.students.forEach(s => { if (L.att[s.id] === 'abs') return; const g = () => Math.max(1, Math.min(4, DEMO_RND(2, 4) - (Math.random() < .12 ? 1 : 0)));
+      L.role[s.id] = { p: g(), f: g(), l: g() }; }); });
   save();
 }
 
@@ -891,6 +895,91 @@ function notesBlock(sid){
       ${r ? `<div class="nb-v">${r.note}<small>/6</small></div><div class="nb-d">Cible ${pts(r.t)} · ${r.k}e moins bonne perf : ${pts(r.x)} · écart ${r.ec >= 0 ? '0' : fmt(r.ec)}</div>` : '<div class="muted">pas de résultat</div>'}</div>`).join('')}
       ${tot != null ? `<div class="note-box tot"><div class="nb-h">Total</div><div class="nb-v">${tot}<small>/12</small></div></div>` : ''}</div>
     ${speOf(sid) ? '' : '<div class="advice">Spé non choisie : la 3e moins bonne performance est prise pour les deux épreuves.</div>'}</div>`;
+}
+/* ---------------------------------------------------------------------
+   💪 Bats Tes Perfs !!! 🚀 (évaluation intermédiaire)
+   Écart = moyenne des tentatives − cible (cible de la leçon 1). Note /5 :
+   sprint : −1 et moins → 2 · −0,5 → 2,5 · 0 → 3 · +0,5 → 3,5 · +1 → 4 · +1,5 → 4,5 · +2 et plus → 5
+   lancer : −1,5 et moins → 2 · −1 → 2,5 · −0,5 → 3 · 0 → 3,5 · +0,5 → 4 · +1 → 4,5 · +1,5 et plus → 5
+   Super bonus : 5/5 supplémentaire si au moins 4,5 en sprint ET en lancer.
+   Rôle (évaluation de l'enseignant) : Placement, Fiabilité, Lisibilité, chacun /2 → /6.
+   --------------------------------------------------------------------- */
+const isBTP = n => kindOf(n) === 'inter';
+function btpNote(n, sid, a){
+  if (!isBTP(n) || attOf(n, sid)) return null;
+  const v = vals(perf(n, sid, a)), t = targetInfo(n, sid, a).value;
+  if (!v.length || t == null) return null;
+  const ec = Math.round((avg(v) - t) * 100) / 100;
+  const note = Math.max(2, Math.min(5, (a === 's' ? 3 : 3.5) + Math.floor(ec * 2 + 1e-9) / 2));
+  return { note, ec, t, moy: avg(v), done: v.length >= nbAtt(n, a) };
+}
+function btpBonus(n, sid){ const s = btpNote(n, sid, 's'), b = btpNote(n, sid, 'b'); return s && b ? (s.note >= 4.5 && b.note >= 4.5) : null; }
+const btpLessons = () => { const l = []; for (let n = 1; n <= S.settings.nbLessons; n++) if (isBTP(n)) l.push(n); return l; };
+const fmtN = v => v == null ? '—' : String(v).replace('.', ',');
+/* Grille du rôle (descripteurs de l'enseignant) */
+const ROLE_CR = [
+  { k:'p', n:'Placement', d:['rejoint le poste adapté avec un accompagnement régulier, dans le respect des zones de sécurité.',
+    'reste au poste adapté avec quelques rappels, dans le respect des zones de sécurité.',
+    'reste présent et attentif au poste adapté, dans le respect des zones de sécurité.',
+    'tient son poste avec autonomie et constance, dans le respect des zones de sécurité.'] },
+  { k:'f', n:'Fiabilité', d:['commence à relever les résultats de course et de lancer avec une aide régulière.',
+    'relève une partie des résultats avec exactitude et complète sa fiche avec une aide ponctuelle.',
+    'relève des résultats globalement exacts et complets.',
+    'relève tous les résultats avec exactitude, de façon autonome.'] },
+  { k:'l', n:'Lisibilité', d:['écrit des résultats déchiffrables avec un accompagnement régulier.',
+    'écrit lisiblement l\'essentiel des résultats.',
+    'écrit les résultats lisiblement dans les bonnes cases.',
+    'présente une fiche soignée permettant une lecture immédiate de tous les résultats.'] }];
+const ROLE_PTS = [null, 0.5, 1, 1.5, 2];
+const roleOf = (n, sid) => lesson(n).role?.[sid] || {};
+function roleNote(n, sid){ const r = roleOf(n, sid); if (!ROLE_CR.every(c => r[c.k])) return null; return ROLE_CR.reduce((t, c) => t + ROLE_PTS[r[c.k]], 0); }
+/* Carte « Mes notes » (fiche de saisie et fiche élève) */
+function btpCard(n, sid, entry){
+  if (!isBTP(n)) return '';
+  const s = btpNote(n, sid, 's'), b = btpNote(n, sid, 'b'), bonus = btpBonus(n, sid);
+  if (!s && !b) return entry ? `<section class="obs-sec btp-sec"><h2>🏁 Bats Tes Perfs : tes notes s'afficheront ici une fois tes courses et tes tirs saisis.</h2></section>` : '';
+  const box = (a, r) => `<div class="note-box"><div class="nb-h">${ACT[a].ico} ${a==='s'?'Sprint':'Lancer'}</div>
+    ${r ? `<div class="nb-v">${fmtN(r.note)}<small>/5</small></div><div class="nb-d">Moyenne ${fmt(r.moy)} · cible ${pts(r.t)} · écart ${r.ec >= 0 ? '+' : ''}${fmt(r.ec)}${r.done ? '' : ' · en cours'}</div>` : '<div class="muted">à saisir</div>'}</div>`;
+  const nxt = a => { const v = vals(perf(n, sid, a)); return v.length ? clampT(a, Math.max(...v)) : null; };
+  const ns = nxt('s'), nb = nxt('b'), rn = isProfRole() ? roleNote(n, sid) : null;
+  return `<section class="card strong btp-card"><h2>🏁 Mes notes · 💪 Bats Tes Perfs !!! 🚀 (L${n})</h2>
+    <div class="notes-grid">${box('s', s)}${box('b', b)}
+      ${bonus ? `<div class="note-box bonus"><div class="nb-h">⭐ SUPER BONUS</div><div class="nb-v">5<small>/5</small></div><div class="nb-d">Au moins 4,5 en sprint et en lancer !</div></div>` : ''}
+      ${rn != null ? `<div class="note-box"><div class="nb-h">📝 Rôle</div><div class="nb-v">${fmtN(rn)}<small>/6</small></div></div>` : ''}</div>
+    ${n < S.settings.nbLessons && (ns != null || nb != null) ? `<div class="advice info" style="margin-top:10px">🎯 <b>Mes nouvelles cibles pour la leçon ${n + 1}</b> : 🏃 ${ns != null ? plotShort('s', ns) : '—'} · 🏀 ${nb != null ? plotShort('b', nb) : '—'} <span class="muted">(ta meilleure perf d'aujourd'hui)</span></div>` : ''}</section>`;
+}
+/* Évaluation du rôle par l'enseignant (Leçon du jour, si Bats Tes Perfs) */
+function profRole(){
+  const n = curLesson();
+  if (!isBTP(n)) return `<div class="card">La leçon ${n} n'est pas une leçon 💪 Bats Tes Perfs !!! 🚀 : pas d'évaluation du rôle.</div>`;
+  const list = sortedStudents().filter(s => attOf(n, s.id) !== 'abs');
+  const done = list.filter(s => roleNote(n, s.id) != null).length;
+  return `<div class="card strong compact"><h2>📝 Évaluation du rôle · L${n}</h2>
+      <div class="muted" style="font-weight:700">${done}/${list.length} élève(s) évalué(s). Chaque critère vaut 0,5 · 1 · 1,5 · 2 points, soit une note sur 6.</div>
+      <details class="d4-rule"><summary>Grille : descripteurs par niveau</summary>
+        <table class="simple role-grid"><tr><th></th>${[1,2,3,4].map(v => `<th>${compDot(v)} ${v} — ${COMP_LV[v].n} · ${fmtN(ROLE_PTS[v])} pt</th>`).join('')}</tr>
+        ${ROLE_CR.map(c => `<tr><th>${c.n}</th>${c.d.map(t => `<td>${esc(t)}</td>`).join('')}</tr>`).join('')}</table></details></div>
+    <div class="role-list">${list.map(s => { const r = roleOf(n, s.id), tot = roleNote(n, s.id);
+      return `<div class="role-row">${band(s.id)}<div class="role-name">${esc(nameOf(s.id))}<div class="role-tot">${tot != null ? fmtN(tot) + ' / 6' : '— / 6'}</div></div>
+        ${ROLE_CR.map(c => `<div class="role-cr"><small>${c.n}</small><div class="role-btns">${[1,2,3,4].map(v =>
+          `<button class="rbtn ${r[c.k]===v?'on':''}" style="--cc:${COMP_LV[v].c};--cf:${COMP_LV[v].f}" data-action="roleSet" data-sid="${s.id}" data-c="${c.k}" data-v="${v}" title="${esc(c.d[v-1])}">${fmtN(ROLE_PTS[v])}</button>`).join('')}</div></div>`).join('')}</div>`; }).join('')}</div>`;
+}
+/* Récapitulatif des notes (Bilans) : à reporter dans Pronote */
+function recapRows(){
+  const B = btpLessons(), F = finaleLesson();
+  return sortedStudents().map(s => { const row = { s, btp: B.map(n => ({ n, at: attOf(n, s.id), sp: btpNote(n, s.id, 's'), la: btpNote(n, s.id, 'b'), bonus: btpBonus(n, s.id), role: roleNote(n, s.id) })),
+    fin: { at: attOf(F, s.id), sp: noteFinale(s.id, 's'), la: noteFinale(s.id, 'b'), spe: speOf(s.id) } }; return row; });
+}
+function profRecap(){
+  const B = btpLessons(), F = finaleLesson(), rows = recapRows();
+  const cell = v => v == null ? '<span class="muted">—</span>' : `<b>${fmtN(v)}</b>`;
+  return `<div class="card strong compact"><h2>📋 Récapitulatif des notes</h2>
+      <div class="muted" style="font-weight:700">Pour Pronote : 💪 Bats Tes Perfs (sprint /5, lancer /5, ⭐ super bonus /5, rôle /6) et évaluation finale (sprint /6, lancer /6). Également dans l'export Excel (feuille « Récap notes »).</div></div>
+    <div class="pj-table-wrap card"><table class="pj-table recap"><tr><th rowspan="2">Élève</th>${B.map(n => `<th colspan="4" class="c">💪 L${n}</th>`).join('')}<th colspan="3" class="c">🏁 Finale L${F}</th></tr>
+      <tr>${B.map(() => '<th>🏃 /5</th><th>🏀 /5</th><th>⭐ /5</th><th>📝 /6</th>').join('')}<th>🏃 /6</th><th>🏀 /6</th><th>Spé</th></tr>
+      ${rows.map(r => `<tr><td><b>${esc(nameOf(r.s.id))}</b></td>${r.btp.map(x => x.at ? `<td colspan="4" class="c"><span class="tag ${x.at==='abs'?'abs':'inapte'}">${x.at==='abs'?'Absent':'Inapte'}</span></td>`
+        : `<td class="c">${cell(x.sp?.note)}</td><td class="c">${cell(x.la?.note)}</td><td class="c">${x.bonus ? '<span class="bonus-badge">⭐ 5</span>' : x.bonus === false ? '<span class="muted">non</span>' : '<span class="muted">—</span>'}</td><td class="c">${cell(x.role)}</td>`).join('')}
+        <td class="c">${cell(r.fin.sp?.note)}</td><td class="c">${cell(r.fin.la?.note)}</td><td class="c">${r.fin.spe ? ACT[r.fin.spe].ico : '—'}</td></tr>`).join('')}</table></div>`;
 }
 const finaleLesson = () => { for (let k = 1; k <= S.settings.nbLessons; k++) if (isFinale(k)) return k; return S.settings.nbLessons; };
 function suggest(sid, a){
@@ -1009,6 +1098,7 @@ function viewStatsDetail(){
     <div class="btn-row" style="margin-bottom:12px"><button class="btn" data-action="go" data-view="stats">← Retour aux élèves</button></div>
     ${frStrip(sid)}
     <div class="card strong compact">${speBlock(sid, true)}${P.cibleS != null ? `<div style="margin-top:6px;font-weight:800">🎯 Mon projet : 🏃 ${pts(P.cibleS)} · 🏀 ${pts(P.cibleB)}${P.texte ? ` · « ${esc(P.texte)} »` : ''}</div>` : ''}</div>
+    ${btpLessons().map(k => btpCard(k, sid, false)).join('')}
     ${notesBlock(sid)}
     <div class="card strong"><h2>💡 Conseils</h2>${advices(sid).map(a=>`<div class="advice ${a.cls}">${a.t}</div>`).join('')}</div>
     <div class="stats-cols">${statsColumn(sid, 's')}${statsColumn(sid, 'b')}</div>
@@ -1203,9 +1293,9 @@ function viewHomeProfLocked(){
 /* Espace enseignant : 4 étapes */
 const PSECT = {
   prep:   { ico:'🛠', t:'Préparer le cycle', tabs:[['classes','👥 Classe & élèves'],['groupes','🎽 Groupes'],['cycle','⚙️ Paramètres du cycle'],['themes','🏛 Piliers']] },
-  jour:   { ico:'📅', t:'Leçon du jour', tabs:[['appel','✅ Appel'],['lgroupes','🎽 Groupes du jour'],['cibles','🎯 Cibles'],['qr','📲 QR de la leçon'],['saisieP','✍️ Saisie (dépannage)']] },
+  jour:   { ico:'📅', t:'Leçon du jour', tabs:[['appel','✅ Appel'],['lgroupes','🎽 Groupes du jour'],['cibles','🎯 Cibles'],['role','📝 Rôle (Bats Tes Perfs)'],['qr','📲 QR de la leçon'],['saisieP','✍️ Saisie (dépannage)']] },
   recup:  { ico:'📥', t:'Récupérer les saisies', tabs:[] },
-  bilans: { ico:'📊', t:'Bilans', tabs:[['statsP','📊 Statistiques'],['projetP','🎯 Projets'],['comp','🎓 Compétences'],['export','📁 Export & sauvegarde']] } };
+  bilans: { ico:'📊', t:'Bilans', tabs:[['statsP','📊 Statistiques'],['recap','📋 Récap des notes'],['projetP','🎯 Projets'],['comp','🎓 Compétences'],['export','📁 Export & sauvegarde']] } };
 const PREDIR = { saisieP:'saisie', statsP:'stats', projetP:'projet' };
 function sectOf(tab){ if (tab === 'compDetail') return 'bilans'; if (tab === 'recup') return 'recup'; return Object.keys(PSECT).find(k => PSECT[k].tabs.some(t => t[0] === tab)) || null; }
 function sectHeader(sec){
@@ -1230,6 +1320,8 @@ function viewProf(){
   else if (t === 'lgroupes') body = profDayGroups();
   else if (t === 'cibles') body = profCibles();
   else if (t === 'qr') body = profSeanceQR();
+  else if (t === 'role') body = profRole();
+  else if (t === 'recap') body = profRecap();
   else if (t === 'recup') body = profRecup();
   else if (t === 'comp') body = profComp();
   else if (t === 'compDetail') body = profCompDetail();
@@ -1654,6 +1746,20 @@ function exportXlsx(){
         th.push([s.nom || '', s.prenom || s.disp || '', nbGroups() > 1 && s.grp ? groupName(s.grp) : '', ...t.cr.map((c, i) => at === 'abs' ? 'ABS' : at === 'inap' ? 'INAPTE' : ob && ob[i] ? obsName(ob[i], t) : '')]); });
       th.push([]); }
     if (th.length) { const w4 = XLSX.utils.aoa_to_sheet(th); w4['!cols'] = [{wch:16},{wch:16},{wch:12},{wch:28},{wch:28},{wch:28},{wch:28},{wch:28}]; XLSX.utils.book_append_sheet(wb, w4, 'Critères observés'); }
+  }
+  {                                                    // récapitulatif des notes (Pronote)
+    const B = btpLessons(), F = finaleLesson(), h = ['Nom', 'Prénom', 'Groupe'];
+    B.forEach(n => h.push(`L${n} BTP sprint /5`, `L${n} BTP lancer /5`, `L${n} super bonus /5`, `L${n} rôle /6`, `L${n} rôle placement`, `L${n} rôle fiabilité`, `L${n} rôle lisibilité`));
+    h.push(`Finale L${F} sprint /6`, `Finale L${F} lancer /6`, 'Spé');
+    const rr = [h];
+    recapRows().forEach(r => { const s = r.s, row = [s.nom || '', s.prenom || s.disp || '', nbGroups() > 1 && s.grp ? groupName(s.grp) : ''];
+      r.btp.forEach(x => { const ro = roleOf(x.n, s.id);
+        if (x.at) row.push(x.at === 'abs' ? 'ABS' : 'INAPTE', '', '', '', '', '', '');
+        else row.push(x.sp ? x.sp.note : '', x.la ? x.la.note : '', x.bonus ? 5 : '', x.role ?? '', ...ROLE_CR.map(c => ro[c.k] ? ROLE_PTS[ro[c.k]] : '')); });
+      row.push(r.fin.sp ? r.fin.sp.note : '', r.fin.la ? r.fin.la.note : '', r.fin.spe === 's' ? 'Sprint' : r.fin.spe === 'b' ? 'Lancer' : '');
+      rr.push(row); });
+    const w5 = XLSX.utils.aoa_to_sheet(rr); w5['!cols'] = h.map((x, i) => ({ wch: i < 3 ? 16 : 13 }));
+    XLSX.utils.book_append_sheet(wb, w5, 'Récap notes');
   }
   const lessons = []; for (let n = 1; n <= N; n++) lessons.push([n, lessonTitle(n), ['s','b'].map(a => lessonPil(n, a) ? `${ACT[a].ico} ${lessonPil(n, a).n} : ${lessonPil(n, a).cr.join(' · ')}` : '').filter(Boolean).join(' | '), nbAtt(n,'s'), nbAtt(n,'b'), hasSource(n) ? `Résultats L${lesson(n).source} (${lesson(n).calc==='avg'?'moyenne':'meilleur'})` : (n===1?'À la main':'Reprise leçon précédente')]);
   XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet([['Leçon','Titre / pilier','Critères','Sprints','Tirs basket','Cibles de base'], ...lessons]), 'Leçons');
@@ -2389,6 +2495,8 @@ const A = {
   appQR: () => { const m = modal(`<h2 class="center">📲 Accès à l'application</h2><div class="center"><img src="${appQRImg(12)}" alt="QR" style="width:min(80vw,460px);height:auto"></div>
       <p class="center app-url">${esc(appURL())}</p><div class="btn-row" style="justify-content:center"><button class="btn primary" data-close>Fermer</button></div>`, { wide:true });
     m.querySelector('[data-close]').onclick = closeModal; },
+  roleSet: d => { const L = lesson(curLesson()); L.role = L.role || {}; const r = L.role[d.sid] = L.role[d.sid] || {}, v = +d.v;
+    r[d.c] = r[d.c] === v ? undefined : v; if (!ROLE_CR.some(c => r[c.k])) delete L.role[d.sid]; save(); render(); },
   lockProf: () => { UI.profUnlocked = false; UI.profTab = 'menu'; go('home'); },
   setRole: d => {
     if (d.r === 'prof') return pinPad(() => { ROOT.role = 'prof'; UI.profUnlocked = true; UI.profTab = 'menu'; save(); go('prof'); });
@@ -2541,7 +2649,7 @@ document.addEventListener('change', e => {
     L.pil[a] = v === '' ? null : v === '?' ? '?' : (snapTheme(themeById(v)) || L.pil[a]); save(); render(); return; }
   if (f === 'kind') { const L = lesson(t.dataset.n), v = t.value;
     L.kind = v;
-    if (t.value === 'diag' || t.value === 'inter') L.source = 'none'; else if (t.value === 'finale') L.source = 'projet'; else if (['none','projet'].includes(L.source)) L.source = 'prev';
+    if (t.value === 'diag') L.source = 'none'; else if (t.value === 'inter') L.source = lastKind('diag', +t.dataset.n) ? 'diag' : 'none'; else if (t.value === 'finale') L.source = 'projet'; else if (['none','projet'].includes(L.source)) L.source = 'prev';
     save(); render(); }
   if (f === 'thName' || f === 'thAct' || f === 'thCr' || f === 'thKind') { const th = themeById(t.dataset.id); if (!th) return;
     if (f === 'thKind') { if (t.value === 't') { th.k = 't'; th.cr = ['Trajectoire de la balle']; } else { delete th.k; th.cr = []; } }
