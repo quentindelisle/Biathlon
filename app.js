@@ -10,7 +10,7 @@
    ===================================================================== */
 'use strict';
 
-const APP_VERSION = '8.6.0';
+const APP_VERSION = '8.7.0';
 const STORE_KEY = 'neps_biathlon5s_v2';
 const QR_CHUNK = 440;           // caractères base45 par QR (QR version 11 max : facile à lire par une caméra)
 
@@ -493,7 +493,8 @@ function viewEntry(){
       h += `<div class="dial-card dial-${a}"><h3><span class="big-ico">${A_.ico}</span> ${W} ${k+1}</h3>
         <svg class="dial${mx>12?' big':''}" viewBox="0 0 200 200" data-a="${a}" data-k="${k}">${dialInner(p[k], mx, t, a)}</svg>
         ${t!=null?`<div class="dial-tgt">🎯 cible ${pts(t)}</div>`:''}
-        <button class="btn small ghost" data-action="dialClear" data-a="${a}" data-k="${k}">Effacer</button></div>`;
+        ${dialLocked(sid, a, k, p[k]) ? `<button class="btn small" data-action="dialUnlock" data-a="${a}" data-k="${k}">✏️ Modifier</button>`
+          : `<button class="btn small ghost" data-action="dialClear" data-a="${a}" data-k="${k}">Effacer</button>`}</div>`;
     }
     h += `</div></div></section>`;
     h += obsBlock(n, sid, a);
@@ -530,6 +531,8 @@ function dialInner(v, max, t, a){
         <text x="100" y="188" text-anchor="middle" font-size="34">${ACT[a].ico}</text>`;
   return s;
 }
+/* tablette élève : un résultat déjà saisi est verrouillé ; « ✏️ Modifier » le déverrouille (chaque modification est signalée au prof) */
+const dialLocked = (sid, a, k, v) => !isProfRole() && v != null && !(UI.unlock && UI.unlock[`${sid}|${a}|${k}`]);
 function bindEntry(){
   const n = curLesson(), sid = UI.sid;
   document.querySelectorAll('svg.dial').forEach(svg => {
@@ -545,13 +548,16 @@ function bindEntry(){
       return Math.max(0, Math.min(max, Math.round((ang - DIAL_START) / step)));
     };
     const show = v => { svg.innerHTML = dialInner(v, max, t, a); };
-    svg.addEventListener('pointerdown', e => { e.preventDefault(); dragging = true; svg.setPointerCapture(e.pointerId);
+    svg.addEventListener('pointerdown', e => { e.preventDefault();
+      if (dialLocked(sid, a, k, res(n, sid)?.[key]?.[k] ?? null)) { toast('🔒 Appuie sur ✏️ Modifier pour changer ce résultat'); return; }
+      dragging = true; svg.setPointerCapture(e.pointerId);
       const v = valFromEvent(e); if (v != null) { cur = v; show(v); } });
     svg.addEventListener('pointermove', e => { if (!dragging) return; const v = valFromEvent(e); if (v != null && v !== cur) { cur = v; show(v); } });
     const end = () => { if (!dragging) return; dragging = false;
       if (cur != null && cur !== (res(n, sid)?.[key]?.[k] ?? null)) {
         const was = vals(perf(n, sid, a)).length >= nbAtt(n, a);
-        setRes(n, sid, r => { r[key][k] = cur; });
+        const old = res(n, sid)?.[key]?.[k] ?? null;
+        setRes(n, sid, r => { r[key][k] = cur; if (old != null && !isProfRole()) r.mod = (r.mod || 0) + 1; });
         if (was !== (vals(perf(n, sid, a)).length >= nbAtt(n, a))) render();      // toutes les courses / tous les tirs saisis : critères du pilier disponibles
         flagSaved(); } };
     svg.addEventListener('pointerup', end); svg.addEventListener('pointercancel', end);
@@ -795,7 +801,7 @@ function painModal(){
 
 /* ---------- Classe « Test » : données inventées pour essayer l'appli (cycle de 7 leçons, leçon du jour : 3) ---------- */
 /* ---------- Classes de démonstration : « Formateurs » (leçon 4) et « Complet » (cycle de 12 leçons terminé) ---------- */
-const TEST_V = 5;                                    // version des scénarios de démonstration
+const TEST_V = 6;                                    // version des scénarios de démonstration
 const DEMO_ROSTER = [['L','Estelle'],['L','Jean Baptiste'],['B','Damien'],['R','Mathieu'],['P','Julie'],['T','Rémy'],['R','Estelle'],['M','Davy'],['D','Benoit'],['P','Christophe'],
   ['R','Grégory'],['M','Pierre'],['D','Yohann'],['L','Fabienne'],['B','Emilie'],['D','Anne Laure'],['G','Romain'],['D','Jovany'],['J','Emilie'],['G','Simon'],
   ['L','Solène'],['R','Paul Vincent'],['L','Caroline'],['L','Thibault'],['M','Romain'],['A','Jean Philippe'],['G','Jérôme'],['C','Nicolas'],['G','Guillaume'],['P','Sophie'],
@@ -834,10 +840,11 @@ function demoResult(n, sid, P, last){
 }
 /* « Formateurs » : 39 élèves, 2 groupes, 7 leçons ; leçon du jour : L4 Bats Tes Perfs !!! (L1 à L3 saisies, aucun absent) */
 function makeFormateurs(){
-  demoClass('Formateurs', ['Classe Test'], DEMO_ROSTER, 7, 4, {
+  demoClass('Formateurs', ['Classe Test'], DEMO_ROSTER, 7, 3, {
     1:['diag',null,null,'none'], 2:['manuel','reag','posl','diag'], 3:['manuel','drt','pous','diag'], 4:['inter',null,null,'diag'],
     5:['manuel','bras','angl','inter'], 6:['manuel','?','?','inter'], 7:['finale',null,null,'projet'] });
-  S.students.forEach(s => { const P = demoProfile(true); for (let n = 1; n <= 3; n++) demoResult(n, s.id, P, 4); });
+  S.students.forEach(s => { const P = demoProfile(true);
+    for (let n = 1; n <= 2; n++) { demoResult(n, s.id, P, 3); const r = S.results[n][s.id]; r.c = Array.from({length:6}, () => DEMO_RND(4, 5)); r.b = Array.from({length:6}, () => DEMO_RND(4, 5)); } });
   save();
 }
 /* « Complet » : 20 élèves, cycle de 12 leçons terminé, très peu d'absents / inaptes, projets du prudent au risqué */
@@ -861,7 +868,7 @@ function makeComplet(){
     S.projects[s.id] = { cibleS: tg('s'), cibleB: tg('b'), spe, texte, ts: now() - 864e5, d: 'test' };
     demoResult(12, s.id, P, 12);
   });
-  [4, 8].forEach(n => { const L = lesson(n); L.role = {};                         // évaluation du rôle (enseignant)
+  [4].forEach(n => { const L = lesson(n); L.role = {};                         // évaluation du rôle (enseignant)
     S.students.forEach(s => { if (L.att[s.id] === 'abs') return; const g = () => Math.max(1, Math.min(4, DEMO_RND(2, 4) - (Math.random() < .12 ? 1 : 0)));
       L.role[s.id] = { p: g(), f: g(), l: g() }; }); });
   save();
@@ -932,6 +939,7 @@ const ROLE_CR = [
     'présente une fiche soignée permettant une lecture immédiate de tous les résultats.'] }];
 const ROLE_PTS = [null, 0.5, 1, 1.5, 2];
 const roleOf = (n, sid) => lesson(n).role?.[sid] || {};
+const roleLesson = () => btpLessons()[0] || null;              // rôle évalué une seule fois : au premier Bats Tes Perfs du cycle
 function roleNote(n, sid){ const r = roleOf(n, sid); if (!ROLE_CR.every(c => r[c.k])) return null; return ROLE_CR.reduce((t, c) => t + ROLE_PTS[r[c.k]], 0); }
 /* Carte « Mes notes » (fiche de saisie et fiche élève) */
 function btpCard(n, sid, entry){
@@ -941,7 +949,7 @@ function btpCard(n, sid, entry){
   const box = (a, r) => `<div class="note-box"><div class="nb-h">${ACT[a].ico} ${a==='s'?'Sprint':'Lancer'}</div>
     ${r ? `<div class="nb-v">${fmtN(r.note)}<small>/5</small></div><div class="nb-d">Moyenne ${fmt(r.moy)} · cible ${pts(r.t)} · écart ${r.ec >= 0 ? '+' : ''}${fmt(r.ec)}${r.done ? '' : ' · en cours'}</div>` : '<div class="muted">à saisir</div>'}</div>`;
   const nxt = a => { const v = vals(perf(n, sid, a)); return v.length ? clampT(a, Math.max(...v)) : null; };
-  const ns = nxt('s'), nb = nxt('b'), rn = isProfRole() ? roleNote(n, sid) : null;
+  const ns = nxt('s'), nb = nxt('b'), rn = isProfRole() && n === roleLesson() ? roleNote(n, sid) : null;
   return `<section class="card strong btp-card"><h2>🏁 Mes notes · 💪 Bats Tes Perfs !!! 🚀 (L${n})</h2>
     <div class="notes-grid">${box('s', s)}${box('b', b)}
       ${bonus ? `<div class="note-box bonus"><div class="nb-h">⭐ SUPER BONUS</div><div class="nb-v">5<small>/5</small></div><div class="nb-d">Au moins 4,5 en sprint et en lancer !</div></div>` : ''}
@@ -950,35 +958,77 @@ function btpCard(n, sid, entry){
 }
 /* Évaluation du rôle par l'enseignant (Leçon du jour, si Bats Tes Perfs) */
 function profRole(){
-  const n = curLesson();
-  if (!isBTP(n)) return `<div class="card">La leçon ${n} n'est pas une leçon 💪 Bats Tes Perfs !!! 🚀 : pas d'évaluation du rôle.</div>`;
+  const n = roleLesson();
+  if (!n) return `<div class="card">Aucune leçon 💪 Bats Tes Perfs !!! 🚀 dans ce cycle : pas d'évaluation du rôle.</div>`;
   const list = sortedStudents().filter(s => attOf(n, s.id) !== 'abs');
   const done = list.filter(s => roleNote(n, s.id) != null).length;
-  return `<div class="card strong compact"><h2>📝 Évaluation du rôle · L${n}</h2>
-      <div class="muted" style="font-weight:700">${done}/${list.length} élève(s) évalué(s). Chaque critère vaut 0,5 · 1 · 1,5 · 2 points, soit une note sur 6.</div>
+  return `<div class="card strong compact"><h2>📝 Évaluation intermédiaire : Rôles dans Bats Tes Perfs ! · L${n}</h2>
+      <div class="muted" style="font-weight:700">${done}/${list.length} élève(s) évalué(s). Chaque critère vaut 0,5 · 1 · 1,5 · 2 points, soit une note sur 6. Les points • à côté d'un nom indiquent des résultats modifiés sur la tablette élève.</div>
       <details class="d4-rule"><summary>Grille : descripteurs par niveau</summary>
         <table class="simple role-grid"><tr><th></th>${[1,2,3,4].map(v => `<th>${compDot(v)} ${v} — ${COMP_LV[v].n} · ${fmtN(ROLE_PTS[v])} pt</th>`).join('')}</tr>
         ${ROLE_CR.map(c => `<tr><th>${c.n}</th>${c.d.map(t => `<td>${esc(t)}</td>`).join('')}</tr>`).join('')}</table></details></div>
     <div class="role-list">${list.map(s => { const r = roleOf(n, s.id), tot = roleNote(n, s.id);
-      return `<div class="role-row">${band(s.id)}<div class="role-name">${esc(nameOf(s.id))}<div class="role-tot">${tot != null ? fmtN(tot) + ' / 6' : '— / 6'}</div></div>
+      const mod = res(n, s.id)?.mod || 0;
+      return `<div class="role-row">${band(s.id)}<div class="role-name">${esc(nameOf(s.id))}${mod ? ` <span class="mod-dots" title="${mod} modification(s) de résultat sur la tablette élève">${'•'.repeat(Math.min(mod, 10))}</span>` : ''}<div class="role-tot">${tot != null ? fmtN(tot) + ' / 6' : '— / 6'}</div></div>
         ${ROLE_CR.map(c => `<div class="role-cr"><small>${c.n}</small><div class="role-btns">${[1,2,3,4].map(v =>
-          `<button class="rbtn ${r[c.k]===v?'on':''}" style="--cc:${COMP_LV[v].c};--cf:${COMP_LV[v].f}" data-action="roleSet" data-sid="${s.id}" data-c="${c.k}" data-v="${v}" title="${esc(c.d[v-1])}">${fmtN(ROLE_PTS[v])}</button>`).join('')}</div></div>`).join('')}</div>`; }).join('')}</div>`;
+          `<button class="rbtn ${r[c.k]===v?'on':''}" style="--cc:${COMP_LV[v].c};--cf:${COMP_LV[v].f}" data-action="roleSet" data-n="${n}" data-sid="${s.id}" data-c="${c.k}" data-v="${v}" title="${esc(c.d[v-1])}">${fmtN(ROLE_PTS[v])}</button>`).join('')}</div></div>`).join('')}</div>`; }).join('')}</div>`;
 }
 /* Récapitulatif des notes (Bilans) : à reporter dans Pronote */
 function recapRows(){
   const B = btpLessons(), F = finaleLesson();
-  return sortedStudents().map(s => { const row = { s, btp: B.map(n => ({ n, at: attOf(n, s.id), sp: btpNote(n, s.id, 's'), la: btpNote(n, s.id, 'b'), bonus: btpBonus(n, s.id), role: roleNote(n, s.id) })),
+  return sortedStudents().map(s => { const row = { s, btp: B.map(n => ({ n, at: attOf(n, s.id), sp: btpNote(n, s.id, 's'), la: btpNote(n, s.id, 'b'), bonus: btpBonus(n, s.id), role: n === roleLesson() ? roleNote(n, s.id) : null })),
     fin: { at: attOf(F, s.id), sp: noteFinale(s.id, 's'), la: noteFinale(s.id, 'b'), spe: speOf(s.id) } }; return row; });
+}
+/* petite pelote de laine (icône du fil rouge) */
+const yarnIcon = (s=22) => `<svg class="yarn-ico" viewBox="-21 -21 42 42" width="${s}" height="${s}"><circle r="19" fill="#E8403B" stroke="#A90F14" stroke-width="2"/>
+  <path d="M-15 -8 Q 0 -20 15 -6 M-18 2 Q 0 -12 18 4 M-14 11 Q 2 -2 15 12 M-6 -18 Q 8 0 -2 18 M5 -18 Q 16 2 6 18" fill="none" stroke="#FFB3AE" stroke-width="2.5" stroke-linecap="round"/></svg>`;
+/* ---------------------------------------------------------------------
+   Bilan par leçon : qui progresse, qui manque d'investissement, qui encourager
+   --------------------------------------------------------------------- */
+function lessonInsight(n, sid){
+  const at = attOf(n, sid); if (at) return { at };
+  const o = { prog: [], inv: [], enc: [] };
+  let has = false;
+  ['s','b'].forEach(a => {
+    const v = vals(perf(n, sid, a)), nb = nbAtt(n, a), t = targetInfo(n, sid, a).value; if (!nb) return;
+    if (v.length) has = true;
+    if (v.length < nb) o.inv.push(`${ACT[a].ico} ${v.length}/${nb} ${ACT[a].word}s`);
+    if (!v.length) return;
+    const m = avg(v);
+    let pm = null; for (let k = n - 1; k >= 1; k--) { const pv = vals(perf(k, sid, a)); if (pv.length) { pm = avg(pv); break; } }
+    if (pm != null && m - pm >= 0.5) o.prog.push(`${ACT[a].ico} +${fmt(m - pm)} pt`);
+    if (t != null && m - t >= 0.5) o.prog.push(`${ACT[a].ico} au-dessus de la cible (+${fmt(m - t)})`);
+    if (pm != null && m - pm <= -0.5) o.enc.push(`${ACT[a].ico} en baisse (${fmt(m - pm)})`);
+    if (t != null && t - m >= 1.5) o.enc.push(`${ACT[a].ico} loin de la cible (−${fmt(t - m)})`);
+  });
+  const dl = dlOf(n, sid); if (dl.length) o.enc.push(`🩹 ${dl.map(zoneName).join(', ')}`);
+  if (!has) o.inv = ['aucun résultat saisi'];
+  return o;
+}
+function profBilanL(){
+  const N = S.settings.nbLessons; let n = UI.bilN;
+  if (!n) { n = curLesson(); while (n > 1 && !S.students.some(s => vals(perf(n, s.id, 's')).length || vals(perf(n, s.id, 'b')).length)) n--; }
+  const ins = sortedStudents().map(s => ({ s, o: lessonInsight(n, s.id) }));
+  const grp = (k, t, cls, hint) => { const l = ins.filter(x => !x.o.at && x.o[k].length);
+    return `<div class="card bl-col ${cls}"><h3>${t} <span class="muted">· ${l.length}</span></h3><div class="muted bl-hint">${hint}</div>
+      ${l.map(x => `<div class="bl-it" data-action="statsDetail" data-sid="${x.s.id}">${band(x.s.id)}<b>${esc(nameOf(x.s.id))}</b><span>${x.o[k].map(esc).join(' · ')}</span></div>`).join('') || '<div class="muted">Personne</div>'}</div>`; };
+  const off = ins.filter(x => x.o.at);
+  return `<div class="card strong compact"><h2>🔎 Bilan de la leçon</h2>
+      <div class="lesson-picker">${Array.from({length:N},(_,i)=>i+1).map(k=>`<button class="lp ${k===n?'on':''}" data-action="bilN" data-n="${k}">${k}</button>`).join('')}</div>
+      <div class="muted" style="font-weight:800;margin-top:4px">L${n} · ${esc(lessonTitle(n) || '')}${off.length ? ` · ${off.length} absent(s)/inapte(s) : ${off.map(x => esc(nameOf(x.s.id))).join(', ')}` : ''}</div></div>
+    <div class="bl-grid">${grp('prog', '📈 Ils progressent', 'good', 'Moyenne en hausse d\'au moins 0,5 pt par rapport à la leçon précédente, ou au-dessus de la cible.')}
+      ${grp('inv', '⚠️ Manque d\'investissement', 'warn', 'Toutes les courses ou tous les tirs prévus n\'ont pas été faits.')}
+      ${grp('enc', '💬 À encourager', 'enc', 'En baisse, loin de la cible (1,5 pt et plus) ou douleur signalée.')}</div>`;
 }
 function profRecap(){
   const B = btpLessons(), F = finaleLesson(), rows = recapRows();
   const cell = v => v == null ? '<span class="muted">—</span>' : `<b>${fmtN(v)}</b>`;
-  return `<div class="card strong compact"><h2>📋 Récapitulatif des notes</h2>
-      <div class="muted" style="font-weight:700">Pour Pronote : 💪 Bats Tes Perfs (sprint /5, lancer /5, ⭐ super bonus /5, rôle /6) et évaluation finale (sprint /6, lancer /6). Également dans l'export Excel (feuille « Récap notes »).</div></div>
-    <div class="pj-table-wrap card"><table class="pj-table recap"><tr><th rowspan="2">Élève</th>${B.map(n => `<th colspan="4" class="c">💪 L${n}</th>`).join('')}<th colspan="3" class="c">🏁 Finale L${F}</th></tr>
-      <tr>${B.map(() => '<th>🏃 /5</th><th>🏀 /5</th><th>⭐ /5</th><th>📝 /6</th>').join('')}<th>🏃 /6</th><th>🏀 /6</th><th>Spé</th></tr>
-      ${rows.map(r => `<tr><td><b>${esc(nameOf(r.s.id))}</b></td>${r.btp.map(x => x.at ? `<td colspan="4" class="c"><span class="tag ${x.at==='abs'?'abs':'inapte'}">${x.at==='abs'?'Absent':'Inapte'}</span></td>`
-        : `<td class="c">${cell(x.sp?.note)}</td><td class="c">${cell(x.la?.note)}</td><td class="c">${x.bonus ? '<span class="bonus-badge">⭐ 5</span>' : x.bonus === false ? '<span class="muted">non</span>' : '<span class="muted">—</span>'}</td><td class="c">${cell(x.role)}</td>`).join('')}
+  return `<div class="card strong compact"><h2>📋 Résultats des évaluations</h2>
+      <div class="muted" style="font-weight:700">Pour Pronote : 💪 Bats Tes Perfs (sprint /5, lancer /5, ⭐ super bonus /5 ; rôle /6 au premier Bats Tes Perfs) et évaluation finale (sprint /6, lancer /6). Également dans l'export Excel (feuille « Résultats évaluations »).</div></div>
+    <div class="pj-table-wrap card"><table class="pj-table recap"><tr><th rowspan="2">Élève</th>${B.map(n => `<th colspan="${n === roleLesson() ? 4 : 3}" class="c">💪 L${n}</th>`).join('')}<th colspan="3" class="c">🏁 Finale L${F}</th></tr>
+      <tr>${B.map(n => '<th>🏃 /5</th><th>🏀 /5</th><th>⭐ /5</th>' + (n === roleLesson() ? '<th>📝 /6</th>' : '')).join('')}<th>🏃 /6</th><th>🏀 /6</th><th>Spé</th></tr>
+      ${rows.map(r => `<tr><td><b>${esc(nameOf(r.s.id))}</b></td>${r.btp.map(x => x.at ? `<td colspan="${x.n === roleLesson() ? 4 : 3}" class="c"><span class="tag ${x.at==='abs'?'abs':'inapte'}">${x.at==='abs'?'Absent':'Inapte'}</span></td>`
+        : `<td class="c">${cell(x.sp?.note)}</td><td class="c">${cell(x.la?.note)}</td><td class="c">${x.bonus ? '<span class="bonus-badge">⭐ 5</span>' : x.bonus === false ? '<span class="muted">non</span>' : '<span class="muted">—</span>'}</td>${x.n === roleLesson() ? `<td class="c">${cell(x.role)}</td>` : ''}`).join('')}
         <td class="c">${cell(r.fin.sp?.note)}</td><td class="c">${cell(r.fin.la?.note)}</td><td class="c">${r.fin.spe ? ACT[r.fin.spe].ico : '—'}</td></tr>`).join('')}</table></div>`;
 }
 const finaleLesson = () => { for (let k = 1; k <= S.settings.nbLessons; k++) if (isFinale(k)) return k; return S.settings.nbLessons; };
@@ -1169,17 +1219,17 @@ function yarnSVG(sid){
 /* bandeau « Mon fil rouge » (fiche de l'élève) */
 function frStrip(sid){
   const m = frMoy(sid);
-  return `<div class="fr-strip"><div class="fr-h"><b>Mon fil rouge</b>${m != null ? `<span class="fr-moy">Moyenne : ${compDot(Math.round(m), null, true)} ${COMP_LV[Math.round(m)].n}</span>` : ''}</div>${yarnSVG(sid)}</div>`;
+  return `<div class="fr-strip"><div class="fr-h"><b>${yarnIcon(22)} Mon Fil Rouge</b>${m != null ? `<span class="fr-moy">Moyenne : ${compDot(Math.round(m), null, true)} ${COMP_LV[Math.round(m)].n}</span>` : ''}</div>${yarnSVG(sid)}</div>`;
 }
 function profComp(){
   if (!S.students.length) return `<div class="card strong center">Aucun élève</div>`;
-  return `<div class="card strong compact"><h2>🎓 Compétences</h2>
+  return `<div class="card strong compact"><h2>${yarnIcon(26)} Fil Rouge</h2>
       <div class="comp-legend"><b>🧶 Fil rouge</b> · investissement en sprint : toutes les courses prévues et proximité de la cible, à chaque leçon. Couleur proposée = moyenne des leçons.</div>
       <div class="comp-legend">${[1,2,3,4].map(k => `${compDot(k)} ${COMP_LV[k].n}`).join(' · ')} · ${compDot(null, 3)} proposé par l'appli · ${compDot(null)} non évalué</div></div>
     ${filterBar()}<div class="tiles">${sortedStudents().filter(passFilter).map(s => { const C = compOf(s.id), sg = frSuggest(s.id);
       return `<button class="tile ${C.FR ? 'done' : ''}" data-action="compDetail" data-sid="${s.id}">${band(s.id)}${C.FR ? '<span class="check">✓</span>' : ''}
         <span class="name">${esc(nameOf(s.id))}</span>
-        <span class="comp-row"><span>🧶 ${compDot(C.FR, sg)}</span><span class="muted" style="font-size:14px">${C.FR ? COMP_LV[C.FR].n : sg ? 'proposé : ' + COMP_LV[sg].n : ''}</span></span></button>`; }).join('')}</div>`;
+        <span class="comp-row"><span>${yarnIcon(20)} ${compDot(C.FR, sg)}</span><span class="muted" style="font-size:14px">${C.FR ? COMP_LV[C.FR].n : sg ? 'proposé : ' + COMP_LV[sg].n : ''}</span></span></button>`; }).join('')}</div>`;
 }
 function compPick(k, title, sub, sug, aid){
   const C = compOf(UI.sid);
@@ -1214,7 +1264,7 @@ function profCompDetail(){
         <table class="simple"><tr><th></th><th>Courses prévues</th><th>Écart moyen à la cible</th></tr>
           <tr><th>${compDot(4)} Très bonne</th><td>toutes faites</td><td>0,5 et moins</td></tr><tr><th>${compDot(3)} Satisfaisante</th><td>toutes faites</td><td>0,6 à 1,5</td></tr>
           <tr><th>${compDot(2)} Fragile</th><td>toutes faites</td><td>1,6 à 2,5</td></tr><tr><th>${compDot(1)} Insuffisante</th><td>pas toutes faites</td><td>ou plus de 2,5</td></tr></table></details></div>
-    <div class="card strong compact"><h2>🎓 Couleur finale (décision de l'enseignant)</h2>
+    <div class="card strong compact"><h2>${yarnIcon(24)} Fil Rouge : couleur finale (décision de l'enseignant)</h2>
       ${compPick('FR', '<b>🧶 Fil rouge</b> · investissement', '', fsug, `moyenne des leçons : ${fm != null ? fmt(fm) : '—'} / 4`)}</div>`;
 }
 /* ---------------------------------------------------------------------
@@ -1293,9 +1343,9 @@ function viewHomeProfLocked(){
 /* Espace enseignant : 4 étapes */
 const PSECT = {
   prep:   { ico:'🛠', t:'Préparer le cycle', tabs:[['classes','👥 Classe & élèves'],['groupes','🎽 Groupes'],['cycle','⚙️ Paramètres du cycle'],['themes','🏛 Piliers']] },
-  jour:   { ico:'📅', t:'Leçon du jour', tabs:[['appel','✅ Appel'],['lgroupes','🎽 Groupes du jour'],['cibles','🎯 Cibles'],['role','📝 Rôle (Bats Tes Perfs)'],['qr','📲 QR de la leçon'],['saisieP','✍️ Saisie (dépannage)']] },
+  jour:   { ico:'📅', t:'Leçon du jour', tabs:[['appel','✅ Appel'],['lgroupes','🎽 Groupes du jour'],['cibles','🎯 Cibles'],['qr','📲 QR de la leçon'],['saisieP','✍️ Saisie (dépannage)']] },
   recup:  { ico:'📥', t:'Récupérer les saisies', tabs:[] },
-  bilans: { ico:'📊', t:'Bilans', tabs:[['statsP','📊 Statistiques'],['recap','📋 Récap des notes'],['projetP','🎯 Projets'],['comp','🎓 Compétences'],['export','📁 Export & sauvegarde']] } };
+  bilans: { ico:'📊', t:'Évaluations et Bilans', tabs:[['bilanL','🔎 Bilan par leçon'],['statsP','📊 Statistiques'],['role','📝 Évaluation intermédiaire : Rôles dans Bats Tes Perfs !'],['recap','📋 Résultats des évaluations'],['projetP','🎯 Projets'],['comp',`${yarnIcon(20)} Fil Rouge`],['export','📁 Export & sauvegarde']] } };
 const PREDIR = { saisieP:'saisie', statsP:'stats', projetP:'projet' };
 function sectOf(tab){ if (tab === 'compDetail') return 'bilans'; if (tab === 'recup') return 'recup'; return Object.keys(PSECT).find(k => PSECT[k].tabs.some(t => t[0] === tab)) || null; }
 function sectHeader(sec){
@@ -1322,6 +1372,7 @@ function viewProf(){
   else if (t === 'qr') body = profSeanceQR();
   else if (t === 'role') body = profRole();
   else if (t === 'recap') body = profRecap();
+  else if (t === 'bilanL') body = profBilanL();
   else if (t === 'recup') body = profRecup();
   else if (t === 'comp') body = profComp();
   else if (t === 'compDetail') body = profCompDetail();
@@ -1336,7 +1387,7 @@ function profMenu(){
       <button class="pm-btn" data-action="profTab" data-tab="classes"><span class="step">1</span><span class="ico">🛠</span>Préparer le cycle<small>Classes · élèves · groupes · paramètres · piliers</small></button>
       <button class="pm-btn" data-action="profTab" data-tab="appel"><span class="step">2</span><span class="ico">📅</span>Leçon du jour<small>Appel · groupes · cibles · 📲 QR de la leçon</small></button>
       <button class="pm-btn" data-action="profTab" data-tab="recup"><span class="step">3</span><span class="ico">📥</span>Récupérer les saisies<small>Scanner les QR des tablettes élèves</small></button>
-      <button class="pm-btn" data-action="profTab" data-tab="statsP"><span class="step">4</span><span class="ico">📊</span>Bilans<small>Statistiques · projets · compétences · export</small></button>
+      <button class="pm-btn" data-action="profTab" data-tab="statsP"><span class="step">4</span><span class="ico">📊</span>Évaluations et Bilans<small>Bilan par leçon · statistiques · évaluations · fil rouge · export</small></button>
     </div>
     <div class="btn-row" style="justify-content:center;margin-top:12px"><button class="btn small" data-action="testClass">🧪 Classes de démonstration</button></div>
     ${appQRCard()}`;
@@ -1749,17 +1800,18 @@ function exportXlsx(){
   }
   {                                                    // récapitulatif des notes (Pronote)
     const B = btpLessons(), F = finaleLesson(), h = ['Nom', 'Prénom', 'Groupe'];
-    B.forEach(n => h.push(`L${n} BTP sprint /5`, `L${n} BTP lancer /5`, `L${n} super bonus /5`, `L${n} rôle /6`, `L${n} rôle placement`, `L${n} rôle fiabilité`, `L${n} rôle lisibilité`));
+    B.forEach(n => h.push(`L${n} BTP sprint /5`, `L${n} BTP lancer /5`, `L${n} super bonus /5`, ...(n === roleLesson() ? [`L${n} rôle /6`, `L${n} rôle placement`, `L${n} rôle fiabilité`, `L${n} rôle lisibilité`] : [])));
     h.push(`Finale L${F} sprint /6`, `Finale L${F} lancer /6`, 'Spé');
     const rr = [h];
     recapRows().forEach(r => { const s = r.s, row = [s.nom || '', s.prenom || s.disp || '', nbGroups() > 1 && s.grp ? groupName(s.grp) : ''];
       r.btp.forEach(x => { const ro = roleOf(x.n, s.id);
-        if (x.at) row.push(x.at === 'abs' ? 'ABS' : 'INAPTE', '', '', '', '', '', '');
-        else row.push(x.sp ? x.sp.note : '', x.la ? x.la.note : '', x.bonus ? 5 : '', x.role ?? '', ...ROLE_CR.map(c => ro[c.k] ? ROLE_PTS[ro[c.k]] : '')); });
+        const isR = x.n === roleLesson();
+        if (x.at) row.push(x.at === 'abs' ? 'ABS' : 'INAPTE', '', '', ...(isR ? ['', '', '', ''] : []));
+        else row.push(x.sp ? x.sp.note : '', x.la ? x.la.note : '', x.bonus ? 5 : '', ...(isR ? [x.role ?? '', ...ROLE_CR.map(c => ro[c.k] ? ROLE_PTS[ro[c.k]] : '')] : [])); });
       row.push(r.fin.sp ? r.fin.sp.note : '', r.fin.la ? r.fin.la.note : '', r.fin.spe === 's' ? 'Sprint' : r.fin.spe === 'b' ? 'Lancer' : '');
       rr.push(row); });
     const w5 = XLSX.utils.aoa_to_sheet(rr); w5['!cols'] = h.map((x, i) => ({ wch: i < 3 ? 16 : 13 }));
-    XLSX.utils.book_append_sheet(wb, w5, 'Récap notes');
+    XLSX.utils.book_append_sheet(wb, w5, 'Résultats évaluations');
   }
   const lessons = []; for (let n = 1; n <= N; n++) lessons.push([n, lessonTitle(n), ['s','b'].map(a => lessonPil(n, a) ? `${ACT[a].ico} ${lessonPil(n, a).n} : ${lessonPil(n, a).cr.join(' · ')}` : '').filter(Boolean).join(' | '), nbAtt(n,'s'), nbAtt(n,'b'), hasSource(n) ? `Résultats L${lesson(n).source} (${lesson(n).calc==='avg'?'moyenne':'meilleur'})` : (n===1?'À la main':'Reprise leçon précédente')]);
   XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet([['Leçon','Titre / pilier','Critères','Sprints','Tirs basket','Cibles de base'], ...lessons]), 'Leçons');
@@ -2037,7 +2089,7 @@ function binLesson(n){
   return w.bytes();
 }
 function binResults(){
-  const w = BW(); w.u8('R'.charCodeAt(0)); w.u8(6); w.id(S.deviceId); w.id(S.id);
+  const w = BW(); w.u8('R'.charCodeAt(0)); w.u8(7); w.id(S.deviceId); w.id(S.id);
   const ents = [], projs = [];
   Object.entries(S.results).forEach(([n, byS]) => Object.entries(byS).forEach(([sid, r]) => { if (r.d === S.deviceId) ents.push([+n, sid, r]); }));
   Object.entries(S.projects).forEach(([sid, p]) => { if (p.d === S.deviceId) projs.push([sid, p]); });
@@ -2046,7 +2098,7 @@ function binResults(){
     const c = r.c||[], b = r.b||[]; w.u8(c.length); c.forEach(v => w.u8(nv(v))); w.u8(b.length); b.forEach(v => w.u8(nv(v)));
     w.u8(nv(r.fb)); w.u8(nv(r.fa)); w.u8(nv(r.mo)); w.u32(zoneMask(r.dl));
     const ob = r.ob || []; w.u8(ob.length); ob.forEach(v => w.u8(nv(v))); w.u8(nv(r.nc));
-    const obB = r.obB || []; w.u8(obB.length); obB.forEach(v => w.u8(nv(v))); });
+    const obB = r.obB || []; w.u8(obB.length); obB.forEach(v => w.u8(nv(v))); w.u8(Math.min(255, r.mod || 0)); });
   w.u8(projs.length);
   projs.forEach(([sid, p]) => { w.id(sid); w.u8(nv(p.cibleS)); w.u8(nv(p.cibleB)); w.u32(Math.floor((p.ts||0)/1000)); w.str(p.texte||'', 600); w.u8(nv(p.formeJ)); w.u8(nv(p.motivJ)); w.u8(p.spe === 's' ? 1 : p.spe === 'b' ? 2 : 0); });
   return { bytes: w.bytes(), count: ents.length + projs.length };
@@ -2092,6 +2144,7 @@ function binDecode(u){
       if (ver >= 3) { e.fb = vn(r.u8()); e.fa = vn(r.u8()); e.mo = vn(r.u8()); e.dl = maskZones(r.u32()); }
       if (ver >= 4) { const no = r.u8(); if (no) { e.ob = []; for (let k = 0; k < no; k++) e.ob.push(vn(r.u8())); } }
       if (ver >= 5) { const nc = vn(r.u8()); if (nc != null) e.nc = nc; const nb2 = r.u8(); if (nb2) { e.obB = []; for (let k = 0; k < nb2; k++) e.obB.push(vn(r.u8())); } }
+      if (ver >= 7) { const md = r.u8(); if (md) e.mod = md; }
       (results[les] = results[les] || {})[sid] = e; }
     const np = r.u8();
     for (let i = 0; i < np; i++) { const sid = r.id(), cS = vn(r.u8()), cB = vn(r.u8()), ts = r.u32()*1000, texte = r.str(true);
@@ -2116,14 +2169,14 @@ function packRP(results, projects){
   T = isFinite(T) ? Math.floor(T/1000) : 0;
   const R = {}, P = {};
   Object.entries(results||{}).forEach(([n, byS]) => { R[n] = {}; Object.entries(byS||{}).forEach(([sid, r]) => {
-    R[n][sid] = [r.c||[], r.b||[], Math.floor((r.ts||0)/1000) - T, di(r.d), r.fb ?? null, r.fa ?? null, r.mo ?? null, r.dl || [], r.ob || null, r.nc ?? null, r.obB || null]; }); });
+    R[n][sid] = [r.c||[], r.b||[], Math.floor((r.ts||0)/1000) - T, di(r.d), r.fb ?? null, r.fa ?? null, r.mo ?? null, r.dl || [], r.ob || null, r.nc ?? null, r.obB || null, r.mod || 0]; }); });
   Object.entries(projects||{}).forEach(([sid, p]) => { P[sid] = [p.cibleS ?? null, p.cibleB ?? null, p.texte||'', Math.floor((p.ts||0)/1000) - T, di(p.d), p.formeJ ?? null, p.motivJ ?? null, p.spe || null]; });
   return { T, D, R, P };
 }
 function unpackRP(z){
   const results = {}, projects = {};
   Object.entries(z.R||{}).forEach(([n, byS]) => { results[n] = {}; Object.entries(byS).forEach(([sid, a]) => {
-    results[n][sid] = { c:a[0], b:a[1], ts:(z.T + a[2])*1000, d:z.D[a[3]], fb:a[4] ?? null, fa:a[5] ?? null, mo:a[6] ?? null, dl:a[7] || [], ...(a[8] ? { ob:a[8] } : {}), ...(a[9] != null ? { nc:a[9] } : {}), ...(a[10] ? { obB:a[10] } : {}) }; }); });
+    results[n][sid] = { c:a[0], b:a[1], ts:(z.T + a[2])*1000, d:z.D[a[3]], fb:a[4] ?? null, fa:a[5] ?? null, mo:a[6] ?? null, dl:a[7] || [], ...(a[8] ? { ob:a[8] } : {}), ...(a[9] != null ? { nc:a[9] } : {}), ...(a[10] ? { obB:a[10] } : {}), ...(a[11] ? { mod:a[11] } : {}) }; }); });
   Object.entries(z.P||{}).forEach(([sid, a]) => { projects[sid] = { cibleS:a[0], cibleB:a[1], texte:a[2], ts:(z.T + a[3])*1000, d:z.D[a[4]], formeJ:a[5] ?? null, motivJ:a[6] ?? null, spe:a[7] || null }; });
   return { results, projects };
 }
@@ -2495,7 +2548,8 @@ const A = {
   appQR: () => { const m = modal(`<h2 class="center">📲 Accès à l'application</h2><div class="center"><img src="${appQRImg(12)}" alt="QR" style="width:min(80vw,460px);height:auto"></div>
       <p class="center app-url">${esc(appURL())}</p><div class="btn-row" style="justify-content:center"><button class="btn primary" data-close>Fermer</button></div>`, { wide:true });
     m.querySelector('[data-close]').onclick = closeModal; },
-  roleSet: d => { const L = lesson(curLesson()); L.role = L.role || {}; const r = L.role[d.sid] = L.role[d.sid] || {}, v = +d.v;
+  bilN: d => { UI.bilN = +d.n; render(); },
+  roleSet: d => { const L = lesson(+d.n); L.role = L.role || {}; const r = L.role[d.sid] = L.role[d.sid] || {}, v = +d.v;
     r[d.c] = r[d.c] === v ? undefined : v; if (!ROLE_CR.some(c => r[c.k])) delete L.role[d.sid]; save(); render(); },
   lockProf: () => { UI.profUnlocked = false; UI.profTab = 'menu'; go('home'); },
   setRole: d => {
@@ -2519,7 +2573,7 @@ const A = {
   testClass: async () => {
     const F = Object.values(ROOT.classes).find(c => ['Formateurs','Classe Test'].includes(c.settings.className)), C = Object.values(ROOT.classes).find(c => c.settings.className === 'Complet');
     const ch = await choiceBox('🧪 Classes de démonstration',
-      '<b>Formateurs</b> : 39 élèves (groupe rouge / groupe bleu), 7 leçons, leçon du jour : L4 💪 Bats Tes Perfs !!! 🚀 (L1 à L3 saisies).<br><b>Complet</b> : 20 élèves, cycle de 12 leçons terminé (projets, spé et notes de l\'évaluation finale).',
+      '<b>Formateurs</b> : 39 élèves (groupe rouge / groupe bleu), 7 leçons, leçon du jour : L3 (L1 et L2 saisies, perfs de 4 à 5).<br><b>Complet</b> : 20 élèves, cycle de 12 leçons terminé (projets, spé et notes de l\'évaluation finale).',
       [...(F ? [{label:'Ouvrir Formateurs', value:'F', cls:'primary'}, {label:'Régénérer Formateurs', value:'Fn', cls:'orange'}] : [{label:'Créer Formateurs', value:'Fn', cls:'primary'}]),
        ...(C ? [{label:'Ouvrir Complet', value:'C', cls:'primary'}, {label:'Régénérer Complet', value:'Cn', cls:'orange'}] : [{label:'Créer Complet', value:'Cn', cls:'primary'}])]);
     if (!ch) return;
@@ -2550,7 +2604,8 @@ const A = {
   statsDetail: d => go('statsDetail', { sid: d.sid }),
 
   // saisie
-  dialClear: d => { const key = ACT[d.a].key; setRes(curLesson(), UI.sid, r => { r[key][+d.k] = null; }); render(); },
+  dialClear: d => { const key = ACT[d.a].key; setRes(curLesson(), UI.sid, r => { if (r[key][+d.k] != null && !isProfRole()) r.mod = (r.mod || 0) + 1; r[key][+d.k] = null; }); render(); },
+  dialUnlock: d => { UI.unlock = UI.unlock || {}; UI.unlock[`${UI.sid}|${d.a}|${d.k}`] = true; render(); toast('✏️ Tu peux modifier ce résultat (le prof en sera informé)'); },
 
   // projet élève
   projStep: d => { const a = d.a, el = $('#proj-' + a); let v = parseInt(el.dataset.v);

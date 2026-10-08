@@ -599,3 +599,15 @@ select[disabled]{opacity:.7}
 .role-grid td,.role-grid th{font-size:13px;vertical-align:top}
 table.recap th,table.recap td{white-space:nowrap}
 @media (max-width:700px){ .role-row{grid-template-columns:1fr} }
+
+/* v8.7.0 : bilan par leçon, points de modification, icône fil rouge */
+.yarn-ico{vertical-align:middle;display:inline-block}
+.bl-grid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:12px;align-items:start}
+.bl-col h3{margin:0 0 4px}
+.bl-col.good{border-color:var(--green)} .bl-col.warn{border-color:var(--red)} .bl-col.enc{border-color:var(--orange)}
+.bl-hint{font-size:13px;font-weight:700;margin-bottom:8px}
+.bl-it{position:relative;display:flex;flex-direction:column;gap:2px;background:#fff;border:2px solid var(--line);border-radius:10px;padding:6px 10px 6px 18px;margin-bottom:6px;cursor:pointer}
+.bl-it .band{position:absolute;left:0;top:0;bottom:0;width:9px;border-radius:8px 0 0 8px}
+.bl-it span{font-size:13px;font-weight:700;color:var(--grey)}
+.mod-dots{color:#E8403B;font-weight:900;letter-spacing:2px;font-size:20px;vertical-align:middle}
+@media (max-width:900px){ .bl-grid{grid-template-columns:1fr} }
