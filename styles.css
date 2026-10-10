@@ -672,3 +672,20 @@ table.recap th.r-name{text-align:left}
 .last-recv .lr-ok{color:var(--green);font-size:18px}
 .last-recv .lr-miss{color:#B5520A;font-size:18px}
 @keyframes lrIn{from{transform:scale(.9);opacity:0}to{transform:none;opacity:1}}
+/* v8.9.0 — observation à chaque passage + conseil chrono */
+.pv{margin-top:8px;padding-top:6px;border-top:2px dashed #C9D3E3;text-align:left}
+.pv-h{font-weight:900;font-size:14px;margin-bottom:4px}
+.pv-row{display:flex;align-items:center;gap:4px;margin:3px 0}
+.pv-c{flex:1;font-size:13px;font-weight:700;line-height:1.15;min-width:0}
+.pv-b{flex:none;width:40px;height:36px;border-radius:9px;border:3px solid #C9D3E3;background:#fff;font-size:20px;font-weight:900;cursor:pointer;padding:0}
+.pv-b.ok{color:var(--green)} .pv-b.no{color:var(--red)}
+.pv-b.ok.on{background:var(--green);border-color:var(--green);color:#fff}
+.pv-b.no.on{background:var(--red);border-color:var(--red);color:#fff}
+.pv-traj{display:grid;grid-template-columns:repeat(4,1fr);gap:4px}
+.pv-tr{border:3px solid #C9D3E3;border-radius:9px;background:#fff;padding:2px;cursor:pointer}
+.pv-tr svg{width:100%;height:auto}
+.pv-tr.on{border-color:var(--cc);background:color-mix(in srgb, var(--cc) 22%, #fff)}
+.big-adv{position:fixed;left:0;right:0;top:32vh;margin:0 auto;box-sizing:border-box;z-index:9999;width:min(92vw,640px);padding:28px 26px;border-radius:22px;
+  background:#fff;border:6px solid var(--orange);box-shadow:0 18px 60px #0A163366;font-size:28px;font-weight:900;line-height:1.3;text-align:center;color:var(--ink);animation:lrIn .3s ease-out}
+.big-adv.warn{border-color:var(--red);background:#FFF1F0}
+.big-adv.info{border-color:var(--orange);background:#FFF6EC}

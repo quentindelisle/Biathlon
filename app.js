@@ -10,7 +10,7 @@
    ===================================================================== */
 'use strict';
 
-const APP_VERSION = '8.8.4';
+const APP_VERSION = '8.9.0';
 const STORE_KEY = 'neps_biathlon5s_v2';
 const QR_CHUNK = 440;           // caractères base45 par QR (QR version 11 max : facile à lire par une caméra)
 
@@ -494,7 +494,7 @@ function viewEntry(){
         <svg class="dial${mx>12?' big':''}" viewBox="0 0 200 200" data-a="${a}" data-k="${k}">${dialInner(p[k], mx, t, a)}</svg>
         ${t!=null?`<div class="dial-tgt">🎯 cible ${pts(t)}</div>`:''}
         ${dialLocked(sid, a, k, p[k]) ? `<button class="btn small" data-action="dialUnlock" data-a="${a}" data-k="${k}">✏️ Modifier</button>`
-          : `<button class="btn small ghost" data-action="dialClear" data-a="${a}" data-k="${k}">Effacer</button>`}</div>`;
+          : `<button class="btn small ghost" data-action="dialClear" data-a="${a}" data-k="${k}">Effacer</button>`}${pvBlock(n, sid, a, k)}</div>`;
     }
     h += `</div></div></section>`;
     h += obsBlock(n, sid, a);
@@ -557,7 +557,15 @@ function bindEntry(){
       if (cur != null && cur !== (res(n, sid)?.[key]?.[k] ?? null)) {
         const was = vals(perf(n, sid, a)).length >= nbAtt(n, a);
         const old = res(n, sid)?.[key]?.[k] ?? null;
-        setRes(n, sid, r => { r[key][k] = cur; if (old != null && !isProfRole()) r.mod = (r.mod || 0) + 1; });
+        let adv = null;
+        if (a === 's' && old == null && obsMode(n) === 'p' && !isProfRole()) {      // chronomètre entre deux courses (mode à chaque passage)
+          const last = Math.max(0, ...(res(n, sid)?.tc || []).filter((x, j) => x && j !== k));
+          if (last) { const d = now() - last, nb = nbAtt(n, 's');
+            if (d < 90e3) adv = ['⏱️ Attention à la récupération ! Il faut du temps pour refaire les réserves énergétiques !', 'warn'];
+            else if (d > 180e3) adv = [`⏱️ Attention à l'autonomie ! N'oublie pas que tu dois faire ${nb} course${nb > 1 ? 's' : ''} aujourd'hui.`, 'info']; } }
+        setRes(n, sid, r => { r[key][k] = cur; if (old != null && !isProfRole()) r.mod = (r.mod || 0) + 1;
+          if (a === 's' && old == null) { r.tc = r.tc || []; r.tc[k] = now(); } });
+        if (adv) bigAdvice(adv[0], adv[1]);
         if (was !== (vals(perf(n, sid, a)).length >= nbAtt(n, a))) render();      // toutes les courses / tous les lancers saisis : critères du pilier disponibles
         flagSaved(); } };
     svg.addEventListener('pointerup', end); svg.addEventListener('pointercancel', end);
@@ -591,6 +599,35 @@ const TRAJ = [null,
 const trajSVG = (v, w=120) => `<svg viewBox="0 0 120 70" width="${w}" height="${Math.round(w*70/120)}" class="traj-svg"><line x1="2" y1="66" x2="118" y2="66" stroke="#9AA3B5" stroke-width="2"/>
   <path d="${TRAJ[v].d}" fill="none" stroke="#0A1633" stroke-width="5" stroke-linecap="round"/>${TRAJ[v].arrow ? '<path d="M104 58 l-12 -1 l7 -9 z" fill="#0A1633"/>' : ''}</svg>`;
 const isTraj = th => !!(th && th.k === 't');
+/* Mode d'observation de la leçon : 'f' = une fois, à la fin des passages (par défaut) · 'p' = à chaque passage */
+const obsMode = n => lesson(n).obsMode === 'p' ? 'p' : 'f';
+/* à chaque passage : critère validé (1) ou non validé (0) → Jamais / Parfois / Souvent / Toujours
+   0 % → Jamais · moins de 50 % → Parfois · 50 % et plus → Souvent · 100 % → Toujours ; trajectoire : moyenne arrondie */
+function pvAgg(th, pv){
+  if (!th || !pv) return null;
+  if (isTraj(th)) { const v = vals(pv.map(x => x?.[0])); return v.length ? [Math.round(avg(v))] : null; }
+  const out = th.cr.map((_, i) => { const m = pv.map(x => x?.[i]).filter(v => v === 0 || v === 1); if (!m.length) return null;
+    const pc = avg(m); return pc === 0 ? 1 : pc === 1 ? 4 : pc >= .5 ? 3 : 2; });
+  return out.some(v => v) ? out : null;
+}
+const pvCount = (pv, i) => { const m = (pv || []).map(x => x?.[i]).filter(v => v === 0 || v === 1); return { ok: m.filter(v => v === 1).length, nb: m.length }; };
+/* bloc « critères » sous chaque passage (mode à chaque passage) */
+function pvBlock(n, sid, a, k){
+  const th = lessonPil(n, a); if (obsMode(n) !== 'p' || !th || !th.cr.length) return '';
+  const cur = res(n, sid)?.pv?.[a]?.[k] || [];
+  if (isTraj(th)) return `<div class="pv"><div class="pv-h">👀 Trajectoire</div><div class="pv-traj">${[1,2,3,4].map(v =>
+    `<button class="pv-tr ${cur[0]===v?'on':''}" style="--cc:${OBS[v].c}" data-action="pv" data-a="${a}" data-k="${k}" data-i="0" data-v="${v}" title="${TRAJ[v].n}">${trajSVG(v, 46)}</button>`).join('')}</div></div>`;
+  return `<div class="pv"><div class="pv-h">👀 ${esc(th.n)}</div>${th.cr.map((c, i) => `<div class="pv-row"><span class="pv-c">${esc(c)}</span>
+    <button class="pv-b ok ${cur[i]===1?'on':''}" data-action="pv" data-a="${a}" data-k="${k}" data-i="${i}" data-v="1" title="Validé">✓</button>
+    <button class="pv-b no ${cur[i]===0?'on':''}" data-action="pv" data-a="${a}" data-k="${k}" data-i="${i}" data-v="0" title="Non validé">✗</button></div>`).join('')}</div>`;
+}
+/* conseil affiché en grand quelques secondes */
+function bigAdvice(txt, cls){
+  document.querySelector('#big-adv')?.remove();
+  const d = document.createElement('div'); d.id = 'big-adv'; d.className = 'big-adv ' + (cls || ''); d.innerHTML = txt;
+  d.onclick = () => d.remove(); document.body.appendChild(d);
+  setTimeout(() => d.remove(), 6000);
+}
 const obsName = (v, th) => isTraj(th) ? TRAJ[v].n : OBS[v].n;
 const MAX_CR = 5;
 function themes(){ if (!ROOT.themes || (ROOT.themesV || 1) < THEMES_V) { ROOT.themes = DEFAULT_THEMES.map(t => ({ ...t, cr:[...t.cr] })); ROOT.themesV = THEMES_V; } return ROOT.themes; }
@@ -651,6 +688,11 @@ function obsBilan(sid){
 function obsBlock(n, sid, a){
   const th = lessonPil(n, a); if (!th || !th.cr.length) return '';
   const nb = nbAtt(n, a), done = vals(perf(n, sid, a)).length >= nb, ob = res(n, sid)?.[obKey(a)] || [];
+  if (obsMode(n) === 'p') { const pv = res(n, sid)?.pv?.[a];
+    return `<section class="obs-sec ${ob.some(v => v) ? 'on' : ''}"><h2>👀 ${ACT[a].ico} ${esc(th.n)} · observé à chaque ${ACT[a].word}</h2>
+      <div class="muted" style="font-weight:700">Sous chaque ${ACT[a].word} : ${isTraj(th) ? 'la trajectoire observée' : '✓ validé ou ✗ non validé pour chaque critère'}. Le bilan se calcule tout seul.</div>
+      ${isTraj(th) ? `<div class="obs-row"><div class="obs-c">${esc(th.cr[0])}</div><div>${obsChip(ob[0], th)}</div></div>`
+        : th.cr.map((c, i) => { const q = pvCount(pv, i); return `<div class="obs-row"><div class="obs-c">${esc(c)}</div><div>${obsChip(ob[i], th)} ${q.nb ? `<span class="muted" style="font-weight:800">${q.ok}/${q.nb} validé${q.ok > 1 ? 's' : ''}</span>` : ''}</div></div>`; }).join('')}</section>`; }
   if (!done) return `<section class="obs-sec"><h2>👀 ${ACT[a].ico} ${esc(th.n)} · à observer pendant les ${ACT[a].word}s</h2>
     <div class="obs-todo">${isTraj(th) ? [1,2,3,4].map(v => `<span class="obs-traj">${trajSVG(v, 70)}</span>`).join('') : th.cr.map(c => `<span>${esc(c)}</span>`).join('')}</div>
     <div class="muted" style="font-weight:700">Les critères se remplissent après ${a==='s'?'la dernière course':'le dernier lancer'}.</div></section>`;
@@ -1564,7 +1606,8 @@ function profCycle(){
         isOverride(n, a) ? ` <button class="btn small ghost xs" data-action="attReset" data-n="${n}" data-a="${a}">Réinitialiser</button>` : '');
     rows += `<div class="lrow"><div class="lesson-num ${n===cur?'cur':''}">${n}</div><div class="lrow-main">
       <div class="lrow-top"><div class="kind-box">${kindSelect(n)}${kindOf(n)==='manuel'?`<input type="text" data-field="title" data-n="${n}" value="${esc(L.title)}" placeholder="Titre de la leçon (facultatif)">`:''}</div>${sourceSelect(n)}</div>
-      <div class="lrow-pil">${pilSelect(n, 's')}${pilSelect(n, 'b')}</div>
+      <div class="lrow-pil">${pilSelect(n, 's')}${pilSelect(n, 'b')}<label class="pil-sel">👀<select data-field="obsMode" data-n="${n}">
+        <option value="f" ${obsMode(n)==='f'?'selected':''}>Observation à la fin des passages</option><option value="p" ${obsMode(n)==='p'?'selected':''}>Observation à chaque passage (+ chrono sprint)</option></select></label></div>
       <div class="lrow-att">${attF('s')}${attF('b')}</div></div></div>`;
   }
   return `<div class="card strong compact">
@@ -2048,7 +2091,7 @@ function sumRead(r){
 }
 function binSeance(n){
   const cur = n || curLesson(), N = binNames(), L = binLesson(cur), list = sortedStudents(), withSum = isFinale(cur);
-  const w = BW(); w.u8('S'.charCodeAt(0)); w.u8(3);
+  const w = BW(); w.u8('S'.charCodeAt(0)); w.u8(4);
   w.u16(N.length); N.forEach(x => w.u8(x)); w.u16(L.length); L.forEach(x => w.u8(x));
   w.u8(withSum ? 1 : 0);
   if (withSum) list.forEach(s => sumBytes(w, s.id));
@@ -2071,6 +2114,7 @@ function binSeance(n){
   w.u8(1); list.forEach(s => w.u32(zoneMask(dlOf(cur, s.id))));      // douleurs signalées à l'appel du jour
   list.forEach(s => { const P = S.projects[s.id];                       // v3 : projets (cibles + spé) connus du prof
     w.u8(P ? 1 : 0); if (P) { w.u8(nv(P.cibleS)); w.u8(nv(P.cibleB)); w.u8(P.spe === 's' ? 1 : P.spe === 'b' ? 2 : 0); w.str(P.texte || '', 200); } });
+  w.u8(obsMode(cur) === 'p' ? 1 : 0);                                     // v4 : mode d'observation de la leçon du jour
   return w.bytes();
 }
 function seanceDecode(u, r, ver){
@@ -2098,7 +2142,8 @@ function seanceDecode(u, r, ver){
   if (ver >= 2 && !r.end() && r.u8()) painsNow = names.students.map(() => maskZones(r.u32()));
   let projs = null;
   if (ver >= 3 && !r.end()) projs = names.students.map(() => r.u8() ? { cibleS: vn(r.u8()), cibleB: vn(r.u8()), spe: [null,'s','b'][r.u8()] || null, texte: r.str() } : null);
-  return { k:'seance', names, lesson: les, sums, hist, painsNow, projs };
+  const om = ver >= 4 && !r.end() ? (r.u8() ? 'p' : 'f') : 'f';
+  return { k:'seance', names, lesson: les, sums, hist, painsNow, projs, om };
 }
 async function applySeance(p){
   const c = targetClass(p.names.cid, p.names.className, true);
@@ -2125,6 +2170,7 @@ async function applySeance(p){
         S.results[h.k][s.id] = { c:o.c, b:o.b, fa:o.fa, nc:o.nc, ...(o.ob ? { ob:o.ob } : {}), ...(o.obB ? { obB:o.obB } : {}), ts: 1, d: 'prof' };
       } });
   });
+  { const Lo = lesson(p.lesson.settings.current); if (p.om === 'p') Lo.obsMode = 'p'; else delete Lo.obsMode; }
   if (p.painsNow) { const Lc = lesson(p.lesson.settings.current); Lc.wb = {}; S.students.forEach((s, i) => { if (p.painsNow[i]?.length) Lc.wb[s.id] = { dl: p.painsNow[i] }; }); }
   if (p.projs) S.students.forEach((s, i) => { const P = p.projs[i], loc = S.projects[s.id];
     if (P && !(loc && loc.d === S.deviceId)) S.projects[s.id] = { ...P, ts: 1, d: 'prof' }; });   // projet saisi sur cette tablette : prioritaire
@@ -2640,6 +2686,10 @@ const A = {
   well: d => { const n = curLesson(), sid = UI.sid, v = +d.v; setRes(n, sid, r => { r[d.f] = r[d.f] === v ? null : v; }); render(); flagSaved(); },
   painOpen: () => painModal(),
   appelWell: d => appelWellModal(d.sid),
+  pv: d => { const n = curLesson(), a = d.a === 'b' ? 'b' : 's', th = lessonPil(n, a); if (!th) return; const k = +d.k, i = +d.i, v = +d.v, K = obKey(a);
+    setRes(n, UI.sid, r => { r.pv = r.pv || {}; r.pv[a] = r.pv[a] || []; const row = Array.from({length: th.cr.length}, (_, j) => (r.pv[a][k] || [])[j] ?? null);
+      row[i] = row[i] === v ? null : v; r.pv[a][k] = row; const ag = pvAgg(th, r.pv[a]); if (ag) r[K] = ag; else delete r[K]; });
+    const y = window.scrollY; render(); window.scrollTo(0, y); flagSaved(); },
   obs: d => { const n = curLesson(), a = d.a === 'b' ? 'b' : 's', th = lessonPil(n, a); if (!th) return; const i = +d.i, v = +d.v, K = obKey(a);
     setRes(n, UI.sid, r => { const ob = Array.from({length: th.cr.length}, (_, j) => (r[K] || [])[j] ?? null); ob[i] = ob[i] === v ? null : v; r[K] = ob; });
     render(); flagSaved(); },
@@ -2776,6 +2826,7 @@ document.addEventListener('change', e => {
   const f = t.dataset.field; if (!f) return;
   if (f === 'className') { S.settings.className = t.value.trim() || 'Classe'; save(); render(); }
   if (f === 'title') { lesson(t.dataset.n).title = t.value.trim(); save(); }
+  if (f === 'obsMode') { const L = lesson(t.dataset.n); if (t.value === 'p') L.obsMode = 'p'; else delete L.obsMode; save(); render(); return; }
   if (f === 'att') { const L = lesson(t.dataset.n), a = t.dataset.a, v = +t.value;
     if (v === +S.settings[ACT[a].base]) delete L[ACT[a].att]; else L[ACT[a].att] = v; save(); render(); }
   if (f === 'set') { S.settings[t.dataset.k] = +t.value; save(); render(); }
