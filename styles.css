@@ -628,3 +628,30 @@ table.recap th.moy,table.recap td.moy{border-left:2px dashed #C98A2E;font-size:1
 table.recap td.moy b{color:#8A4B00}
 table.recap .opt{border-left:2px dashed #C98A2E}
 table.recap th.opt small{font-weight:700;font-style:italic;opacity:.8}
+/* v8.7.3 — en-têtes de leçon alignés sur leurs résultats */
+.pj-table th.c{text-align:center}
+table.recap th{text-align:center}
+table.recap th.r-name{text-align:left}
+/* v8.8.0 — fiches élèves en PDF (A4 paysage, 2 pages par élève) */
+#print-root{position:fixed;left:-20000px;top:0;z-index:-1}
+.pp{width:297mm;height:210mm;background:#fff;position:relative;overflow:hidden;box-sizing:border-box;padding:26px 30px;font-size:16px;color:var(--ink);
+  -webkit-print-color-adjust:exact;print-color-adjust:exact}
+.pp-in{transform-origin:top left;column-gap:16px}
+.pp1 > *{break-inside:avoid;-webkit-column-break-inside:avoid;display:block}
+.pp1 > .entry-head{display:flex}
+.pp .card{margin-bottom:10px;padding:10px 12px}
+.pp .entry-head{margin-bottom:10px}
+.pp .stats-cols{grid-template-columns:1fr 1fr}
+.pp .ls-list{column-count:2;column-gap:14px}
+.pp .lesson-stat{break-inside:avoid;-webkit-column-break-inside:avoid}
+.pp .notes-grid{grid-template-columns:repeat(auto-fit,minmax(150px,1fr))}
+.pp-name{font-size:24px;font-weight:900;margin-bottom:6px}
+.pp-foot{position:absolute;left:30px;right:30px;bottom:10px;display:flex;justify-content:space-between;font-size:11px;font-weight:700;color:#5A6B85}
+@media print{
+  @page{size:A4 landscape;margin:0}
+  body.printing{background:#fff!important;margin:0;padding:0}
+  body.printing > *:not(#print-root){display:none!important}
+  body.printing #print-root{position:static;left:auto;z-index:auto}
+  .pp{page-break-after:always;break-after:page}
+  .pp:last-child{page-break-after:auto;break-after:auto}
+}

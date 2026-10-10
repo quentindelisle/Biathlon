@@ -10,7 +10,7 @@
    ===================================================================== */
 'use strict';
 
-const APP_VERSION = '8.7.2';
+const APP_VERSION = '8.8.0';
 const STORE_KEY = 'neps_biathlon5s_v2';
 const QR_CHUNK = 440;           // caractères base45 par QR (QR version 11 max : facile à lire par une caméra)
 
@@ -644,7 +644,7 @@ function obsBilan(sid){
     (byTh[a + th.id] = byTh[a + th.id] || { th, a, ls: [] }).ls.push({ n, ob: obsOf(n, sid, a), at: attOf(n, sid) }); });
   const list = Object.values(byTh); if (!list.length) return '';
   return list.map(({ th, a, ls }) => `<div class="obs-bilan"><h3>${ACT[a].ico} ${esc(th.n)}</h3>
-    <div class="pj-table-wrap"><table class="pj-table"><tr><th>Critère</th>${ls.map(x => `<th>L${x.n}</th>`).join('')}</tr>
+    <div class="pj-table-wrap"><table class="pj-table"><tr><th>Critère</th>${ls.map(x => `<th class="c">L${x.n}</th>`).join('')}</tr>
     ${th.cr.map((c, i) => `<tr><td><b>${esc(c)}</b></td>${ls.map(x => `<td class="c">${x.at ? `<span class="tag ${x.at==='abs'?'abs':'inapte'}">${x.at==='abs'?'Abs.':'Inapte'}</span>` : obsChip(x.ob?.[i], th)}</td>`).join('')}</tr>`).join('')}</table></div></div>`).join('');
 }
 /* Bloc de la fiche de saisie : à observer pendant les courses / tirs, puis Toujours / Souvent / Parfois / Jamais (ou trajectoire) */
@@ -801,7 +801,7 @@ function painModal(){
 
 /* ---------- Classe « Test » : données inventées pour essayer l'appli (cycle de 7 leçons, leçon du jour : 3) ---------- */
 /* ---------- Classes de démonstration : « Formateurs » (leçon 4) et « Complet » (cycle de 12 leçons terminé) ---------- */
-const TEST_V = 6;                                    // version des scénarios de démonstration
+const TEST_V = 7;                                    // version des scénarios de démonstration
 const DEMO_ROSTER = [['L','Estelle'],['L','Jean Baptiste'],['B','Damien'],['R','Mathieu'],['P','Julie'],['T','Rémy'],['R','Estelle'],['M','Davy'],['D','Benoit'],['P','Christophe'],
   ['R','Grégory'],['M','Pierre'],['D','Yohann'],['L','Fabienne'],['B','Emilie'],['D','Anne Laure'],['G','Romain'],['D','Jovany'],['J','Emilie'],['G','Simon'],
   ['L','Solène'],['R','Paul Vincent'],['L','Caroline'],['L','Thibault'],['M','Romain'],['A','Jean Philippe'],['G','Jérôme'],['C','Nicolas'],['G','Guillaume'],['P','Sophie'],
@@ -838,6 +838,15 @@ function demoResult(n, sid, P, last){
   S.results[n] = S.results[n] || {}; S.results[n][sid] = r;
   if (Math.random() < .06) { const L = lesson(n); L.wb = L.wb || {}; L.wb[sid] = { dl: [DEMO_PICK(ZONES.map(z => z.k))] }; }
 }
+/* élève « modèle » : progrès régulier à chaque leçon, toutes les courses faites, aucune douleur */
+function demoModel(n, sid, M, last){
+  const off = [-.4, -.2, 0, 0, .2, .4], m = base => base + M.prog * (n - 1);
+  const vs = base => off.map(o => Math.max(1, Math.min(8, Math.round(m(base) + o))));
+  const r = { c: vs(M.lvS), b: vs(M.lvB), ts: now() - (last - n) * 7 * 864e5, d: 'test' };
+  ['s','b'].forEach(a => { const th = lessonPil(n, a);
+    if (th) r[obKey(a)] = th.cr.map((_, i) => Math.max(1, Math.min(4, 2 + Math.floor((n + i) / 5)))); });
+  S.results[n] = S.results[n] || {}; S.results[n][sid] = r;
+}
 /* « Formateurs » : 39 élèves, 2 groupes, 7 leçons ; leçon du jour : L4 Bats Tes Perfs !!! (L1 à L3 saisies, aucun absent) */
 function makeFormateurs(){
   demoClass('Formateurs', ['Classe Test'], DEMO_ROSTER, 7, 3, {
@@ -855,21 +864,24 @@ function makeComplet(){
     9:['manuel','drt','angl','inter'], 10:['manuel','bras','pous','inter'], 11:['manuel','fin','angl','inter'], 12:['finale',null,null,'projet'] });
   const PROFILS = [['prudente','Je veux être sûr de réussir ma cible.'], ['conseillee','Je suis la cible conseillée, je pense pouvoir la tenir.'],
     ['ambitieuse','Je vise haut, je me sens en progrès.'], ['risque','Je tente le tout pour le tout !']];
-  const prof = {};
-  S.students.forEach((s, i) => { const P = prof[s.id] = demoProfile(false); if (i % 6 === 0) P.prog = .4;   // quelques élèves en gros progrès (super bonus)
+  computeNames(); const prof = {}, models = new Set(sortedStudents().slice(0, 3).map(s => s.id));   // les 3 premiers élèves de la liste : de bons exemples
+  const MODELS = [{ lvS:3, lvB:3.2, prog:.4 }, { lvS:2.8, lvB:2.6, prog:.42 }, { lvS:3.2, lvB:3, prog:.38 }];
+  [...models].forEach((id, k) => { const M = prof[id] = MODELS[k]; for (let n = 1; n <= 11; n++) demoModel(n, id, M, 12); });
+  S.students.forEach((s, i) => { if (models.has(s.id)) return;
+    const P = prof[s.id] = demoProfile(false); if (i % 6 === 0) P.prog = .4;   // quelques élèves en gros progrès (super bonus)
     for (let n = 1; n <= 11; n++) { const x = Math.random(), L = lesson(n);
       if (x < .02) { L.att[s.id] = 'abs'; continue; }
       if (x < .03) { L.att[s.id] = 'inap'; continue; }
       demoResult(n, s.id, P, 12); } });
   S.students.forEach((s, i) => {
-    const [kind, texte] = PROFILS[i % 4], tg = a => { const g = suggest(s.id, a); if (!g) return 4;
+    const isM = models.has(s.id), [kind, texte] = isM ? PROFILS[1] : PROFILS[i % 4], tg = a => { const g = suggest(s.id, a); if (!g) return 4;
       return kind === 'risque' ? clampT(a, g.ambitieuse + 1) : g[kind]; };
     const P = prof[s.id], spe = P.lvS - P.lvB > 0.4 ? 's' : P.lvB - P.lvS > 0.4 ? 'b' : DEMO_PICK(['s','b']);
     S.projects[s.id] = { cibleS: tg('s'), cibleB: tg('b'), spe, texte, ts: now() - 864e5, d: 'test' };
-    demoResult(12, s.id, P, 12);
+    if (isM) demoModel(12, s.id, P, 12); else demoResult(12, s.id, P, 12);
   });
   [4].forEach(n => { const L = lesson(n); L.role = {};                         // évaluation du rôle (enseignant)
-    S.students.forEach(s => { if (L.att[s.id] === 'abs') return; const g = () => Math.max(1, Math.min(4, DEMO_RND(2, 4) - (Math.random() < .12 ? 1 : 0)));
+    S.students.forEach(s => { if (L.att[s.id] === 'abs') return; if (models.has(s.id)) { L.role[s.id] = { p:4, f:3, l:4 }; return; } const g = () => Math.max(1, Math.min(4, DEMO_RND(2, 4) - (Math.random() < .12 ? 1 : 0)));
       L.role[s.id] = { p: g(), f: g(), l: g() }; }); });
   save();
 }
@@ -1086,7 +1098,7 @@ function viewProjetDetail(){
   return `<div class="entry-name">${band(sid)}<div class="who">${esc(nameOf(sid))}</div><span class="muted" style="font-weight:800">Projet · évaluation finale (L${F})</span>
       <button class="btn" data-action="go" data-view="projet" style="margin-left:auto">← Retour aux élèves</button></div>
     ${!rows && !isProfRole() ? '' : `<div class="card strong compact"><h2>📋 Mon bilan, leçon par leçon</h2>
-      <div class="pj-table-wrap"><table class="pj-table"><tr><th>Leçon</th><th>🏃 Sprint</th><th>🏀 Tir</th><th>🧶 Fil rouge</th></tr>${rows || '<tr><td colspan="4" class="muted">Pas encore de données</td></tr>'}</table></div></div>`}
+      <div class="pj-table-wrap"><table class="pj-table"><tr><th>Leçon</th><th>🏃 Sprint</th><th>🏀 Tir</th><th class="c">🧶 Fil rouge</th></tr>${rows || '<tr><td colspan="4" class="muted">Pas encore de données</td></tr>'}</table></div></div>`}
     ${obsBilan(sid) ? `<div class="card strong compact"><h2>👀 Mes critères observés</h2>${obsBilan(sid)}</div>` : ''}
     <div class="card strong compact"><h2>🔎 En résumé</h2>
       <div><b>🏃 Sprint</b> ${sum('s')}</div><div style="margin-top:6px"><b>🏀 Tir</b> ${sum('b')}</div></div>
@@ -1139,7 +1151,7 @@ function statsColumn(sid, a){
   }
   return `<div class="card strong"><h2>${A_.ico} ${A_.label}</h2>
     ${bars.some(b=>b.v!=null) ? `<div class="muted" style="font-weight:700">Points moyens par leçon <span style="color:var(--orange)">(- - cible)</span></div>${barChart(bars, mx, a==='b'?'green':'')}` : ''}
-    ${html}</div>`;
+    <div class="ls-list">${html}</div></div>`;
 }
 function viewStatsDetail(){
   const sid = UI.sid, s = student(sid); if (!s) return '';
@@ -1148,7 +1160,8 @@ function viewStatsDetail(){
   return `<div class="entry-head">${col?`<span class="band" style="background:${col.c}"></span>`:''}<div class="who">${esc(nameOf(sid))}</div>
       <div class="tgt"><div class="tgt-box"><div class="muted" style="font-weight:800">🏃 CIBLE L${cur}</div><div class="v">${plotShort('s', targetInfo(cur, sid, 's').value)}</div></div>
       <div class="tgt-box"><div class="muted" style="font-weight:800">🏀 CIBLE L${cur}</div><div class="v">${plotShort('b', targetInfo(cur, sid, 'b').value)}</div></div></div></div>
-    <div class="btn-row" style="margin-bottom:12px"><button class="btn" data-action="go" data-view="stats">← Retour aux élèves</button></div>
+    <div class="btn-row" style="margin-bottom:12px"><button class="btn" data-action="go" data-view="stats">← Retour aux élèves</button>
+      ${isProfRole() ? `<button class="btn" data-action="printFiche" data-sid="${sid}" style="margin-left:auto">🖨️ Fiche en PDF</button>` : ''}</div>
     ${frStrip(sid)}
     <div class="card strong compact">${speBlock(sid, true)}${P.cibleS != null ? `<div style="margin-top:6px;font-weight:800">🎯 Mon projet : 🏃 ${pts(P.cibleS)} · 🏀 ${pts(P.cibleB)}${P.texte ? ` · « ${esc(P.texte)} »` : ''}</div>` : ''}</div>
     ${btpLessons().map(k => btpCard(k, sid, false)).join('')}
@@ -1157,6 +1170,53 @@ function viewStatsDetail(){
     <div class="stats-cols">${statsColumn(sid, 's')}${statsColumn(sid, 'b')}</div>
     ${obsBilan(sid) ? `<div class="card strong"><h2>👀 Mes critères observés</h2>${obsBilan(sid)}</div>` : ''}
     ${wellSuivi(sid)}`;
+}
+
+/* ---------------------------------------------------------------------
+   Fiches élèves en PDF : la fiche Statistiques mise en page sur 2 pages A4 paysage
+   (recto : bilan · verso : sprint et tir leçon par leçon, douleurs).
+   L'appli prépare les pages puis ouvre l'impression → « Enregistrer en PDF ».
+   --------------------------------------------------------------------- */
+function fichePages(sid){
+  const s = student(sid), col = groupColor(grpOf(sid)), cur = curLesson(), P = S.projects[sid] || {};
+  const foot = `<div class="pp-foot">Biathlon · ${esc(className())} · ${esc(nameOf(sid))} · ${new Date().toLocaleDateString('fr-FR')}<span>Quentin Delisle et Gwilherm Rocher</span></div>`;
+  const head = `<div class="entry-head">${col?`<span class="band" style="background:${col.c}"></span>`:''}<div class="who">${esc(nameOf(sid))}</div>
+      <div class="tgt"><div class="tgt-box"><div class="muted" style="font-weight:800">🏃 CIBLE L${cur}</div><div class="v">${plotShort('s', targetInfo(cur, sid, 's').value)}</div></div>
+      <div class="tgt-box"><div class="muted" style="font-weight:800">🏀 CIBLE L${cur}</div><div class="v">${plotShort('b', targetInfo(cur, sid, 'b').value)}</div></div></div></div>`;
+  const recto = `${head}${frStrip(sid)}
+    <div class="card strong compact">${speBlock(sid, false)}${P.cibleS != null ? `<div style="margin-top:6px;font-weight:800">🎯 Mon projet : 🏃 ${pts(P.cibleS)} · 🏀 ${pts(P.cibleB)}${P.texte ? ` · « ${esc(P.texte)} »` : ''}</div>` : ''}</div>
+    ${btpLessons().map(k => btpCard(k, sid, false)).join('')}
+    ${notesBlock(sid)}
+    <div class="card strong"><h2>💡 Conseils</h2>${advices(sid).map(a=>`<div class="advice ${a.cls}">${a.t}</div>`).join('')}</div>
+    ${obsBilan(sid) ? `<div class="card strong"><h2>👀 Mes critères observés</h2>${obsBilan(sid)}</div>` : ''}`;
+  const verso = `<div class="pp-name">${esc(nameOf(sid))}</div><div class="stats-cols">${statsColumn(sid, 's')}${statsColumn(sid, 'b')}</div>${wellSuivi(sid)}`;
+  return `<section class="pp"><div class="pp-in pp1">${recto}</div>${foot}</section><section class="pp"><div class="pp-in pp2">${verso}</div>${foot}</section>`;
+}
+/* ajuste chaque page : on élargit la mise en page puis on la réduit jusqu'à ce qu'elle tienne sur la feuille */
+function fitPage(pg){
+  const inn = pg.querySelector('.pp-in'), W = pg.clientWidth - 2 * 30, H = pg.clientHeight - 2 * 26 - 18;
+  const cols = inn.classList.contains('pp1') ? [2, 3] : [1];
+  let best = null;
+  cols.forEach(c => { inn.style.columnCount = inn.classList.contains('pp1') ? c : '';
+    for (let k = 100; k >= 25; k -= 3) { const z = k / 100; inn.style.width = (W / z) + 'px'; inn.style.transform = '';
+      if (inn.scrollHeight * z <= H) { if (!best || z > best.z) best = { c, z }; break; } } });
+  if (!best) best = { c: cols[cols.length - 1], z: .25 };
+  if (inn.classList.contains('pp1')) inn.style.columnCount = best.c;
+  inn.style.width = (W / best.z) + 'px'; inn.style.transform = `scale(${best.z})`;
+}
+async function printFiches(ids){
+  if (!ids.length) return toast('Aucun élève');
+  document.querySelector('#print-root')?.remove();
+  const root = document.createElement('div'); root.id = 'print-root';
+  root.innerHTML = ids.map(fichePages).join('');
+  root.querySelectorAll('button').forEach(b => b.removeAttribute('data-action'));
+  document.body.appendChild(root); document.body.classList.add('printing');
+  toast(`Préparation de ${ids.length} fiche${ids.length > 1 ? 's' : ''}…`);
+  await new Promise(r => requestAnimationFrame(() => setTimeout(r, 60)));
+  root.querySelectorAll('.pp').forEach(fitPage);
+  const done = () => { document.body.classList.remove('printing'); root.remove(); window.removeEventListener('afterprint', done); };
+  window.addEventListener('afterprint', done);
+  setTimeout(() => window.print(), 80);
 }
 
 /* ---------------------------------------------------------------------
@@ -1260,7 +1320,7 @@ function profCompDetail(){
   return `<div class="entry-name">${band(sid)}<div class="who">${esc(nameOf(sid))}</div>
       <button class="btn" data-action="profTab" data-tab="comp" style="margin-left:auto">← Retour aux élèves</button></div>
     <div class="card strong compact"><h2>📋 Leçon par leçon</h2>
-      <div class="pj-table-wrap"><table class="pj-table"><tr><th>Leçon</th><th>🏃 Écart cible</th><th>🏀 Écart cible</th><th>🧶 Fil rouge</th></tr>
+      <div class="pj-table-wrap"><table class="pj-table"><tr><th>Leçon</th><th class="c">🏃 Écart cible</th><th class="c">🏀 Écart cible</th><th>🧶 Fil rouge</th></tr>
         ${rows || '<tr><td colspan="4" class="muted">Pas encore de données</td></tr>'}</table></div>
       <details class="d4-rule"><summary>Comment l'appli calcule le fil rouge</summary>
         <p>Toutes les courses prévues doivent être faites, sinon la leçon est en maîtrise insuffisante. Ensuite, on regarde l'écart moyen sous la cible sur toutes les courses (au-dessus de la cible, l'écart compte pour 0). La proximité affichée est le pourcentage moyen de la cible atteint par course. Sans cible, la leçon n'est pas évaluée.</p>
@@ -1656,6 +1716,10 @@ function profPartage(){
 function profExport(){
   return `<div class="card strong"><h2>Export Excel</h2>
       <button class="btn green" data-action="exportXlsx">📊 Exporter en .xlsx</button></div>
+    <div class="card strong"><h2>🖨️ Fiches élèves en PDF</h2>
+      <div class="muted" style="font-weight:700">La fiche de chaque élève sur 2 pages A4 paysage (recto verso). Dans la fenêtre d'impression, choisir « Enregistrer en PDF » (sur iPad : Partager → Enregistrer dans Fichiers). Pour imprimer en recto verso : reliure bord court.</div>
+      <div class="btn-row" style="margin-top:10px"><button class="btn green" data-action="printFiches">🖨️ Toute la classe (${S.students.length} élèves)</button>
+</div></div>
     <div class="card"><h2>Sauvegarde complète</h2><div class="btn-row">
       <button class="btn" data-action="backup">💾 Sauvegarder (.json)</button>
       <label class="btn">♻️ Restaurer<input type="file" id="file-restore" accept=".json,application/json" hidden></label></div></div>
@@ -2679,6 +2743,8 @@ const A = {
 
   // export / réglages
   exportXlsx: () => exportXlsx(),
+  printFiches: () => printFiches(sortedStudents().map(s => s.id)),
+  printFiche: d => printFiches([d.sid]),
   backup: () => downloadJSON(ROOT, `Biathlon_sauvegarde_${new Date().toISOString().slice(0,10)}.json`),
   setPin: () => { const v = $('#new-pin').value.trim(); if (!/^\d{4}$/.test(v)) return toast('4 chiffres requis'); ROOT.pin = v; save(); $('#new-pin').value=''; toast('✓ Code modifié'); },
   clearResults: async () => { if (await confirmBox('Effacer tous les résultats ?', 'Performances, tirs et projets seront supprimés (la liste et les leçons restent).', 'Effacer', true)) { S.results = {}; S.projects = {}; save(); render(); } },
