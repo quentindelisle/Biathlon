@@ -1,16 +1,16 @@
 /* =====================================================================
-   Biathlon 5 s / Basket — Suivi de performance élèves
+   Biathlon 5 s / Lancer — Suivi de performance élèves
    N'EPS numérique — CA1 — Quentin Delisle et Gwilherm Rocher
    PWA hors-ligne : données stockées sur l'appareil (localStorage),
    échanges entre tablettes par QR codes.
    Mesure : 1 point par plot atteint.
      Barème réglable (menu prof) : course = vitesse du 1er plot (+1 km/h par plot) et temps de course ;
      lancer = distance du 1er plot et écart entre plots ; maximum de points = nombre de plots.
-     Basket (tir long) : plot 1 à 4 m, puis un plot tous les 2 m (1 à 20 plots)
+     Lancer (lancer long) : plot 1 à 4 m, puis un plot tous les 2 m (1 à 20 plots)
    ===================================================================== */
 'use strict';
 
-const APP_VERSION = '8.8.2';
+const APP_VERSION = '8.8.4';
 const STORE_KEY = 'neps_biathlon5s_v2';
 const QR_CHUNK = 440;           // caractères base45 par QR (QR version 11 max : facile à lire par une caméra)
 
@@ -19,11 +19,11 @@ const ACT = {
   s: { id:'s', key:'c', ico:'🏃', get label(){ return 'Sprint ' + fmt(S.settings.timeS) + ' s'; }, att:'nbCourses', base:'baseCourses', plots:'plotsS', ecart:'ecartS',
        man:'manual', adj:'adjust', proj:'cibleS', maxPlots:20, minPlots:1, word:'course',
        unit: k => `${fmt(spdS(k))} km/h`, detail: k => `${fmt(distS(k))} m en ${fmt(S.settings.timeS)} s` },
-  b: { id:'b', key:'b', ico:'🏀', label:'Basket', att:'nbTirs', base:'baseTirs', plots:'plotsB', ecart:'ecartB',
-       man:'manualB', adj:'adjustB', proj:'cibleB', maxPlots:20, minPlots:1, word:'tir',
+  b: { id:'b', key:'b', ico:'🏀', label:'Lancer', att:'nbTirs', base:'baseTirs', plots:'plotsB', ecart:'ecartB',
+       man:'manualB', adj:'adjustB', proj:'cibleB', maxPlots:20, minPlots:1, word:'lancer',
        unit: k => `${fmt(distB(k))} m`, detail: k => `plot à ${fmt(distB(k))} m` },
 };
-const pts = k => `${k} pt${k>1?'s':''}`;
+const pts = k => `${k} plot${k>1?'s':''}`;
 const plotTxt = (a, k) => k == null ? '—' : k === 0 ? 'aucun plot' : `plot ${k} (${ACT[a].unit(k)})`;
 const plotShort = (a, k) => k == null ? '—' : `${pts(k)} · ${ACT[a].unit(k)}`;
 /* Barème réglable par l'enseignant */
@@ -396,7 +396,7 @@ function viewHome(){
     <div class="home-lesson">
       <div class="big">Leçon ${n} / ${S.settings.nbLessons}</div>
       <div style="font-size:20px;font-weight:800">${esc(lessonTitle(n) || 'Sans titre')}</div>
-      <div class="muted" style="font-weight:700">🏃 ${nbAtt(n,'s')} sprint(s) de ${fmt(S.settings.timeS)} s · 🏀 ${nbAtt(n,'b')} tir(s) basket · ${pres}/${S.students.length} élève(s) présent(s)</div>
+      <div class="muted" style="font-weight:700">🏃 ${nbAtt(n,'s')} sprint(s) de ${fmt(S.settings.timeS)} s · 🏀 ${nbAtt(n,'b')} lancer(s) · ${pres}/${S.students.length} élève(s) présent(s)</div>
     </div>
     <div class="home-grid">
       <button class="home-btn saisie" data-action="goSaisie"><span class="ico">✍️</span>Saisie</button>
@@ -445,7 +445,7 @@ function viewSaisie(){
   const off = S.students.filter(s => !present(n, s.id)).length;
   return `<div class="card strong"><div class="row"><b style="font-size:20px" class="grow">Leçon ${n} ${lessonTitle(n)?'– '+esc(lessonTitle(n)):''}</b>
       ${nbGroups() > 1 ? `<button class="btn small" data-action="pickGroup" data-g="">${UI.filter && UI.filter !== 'all' ? '🎽 ' + groupName(UI.filter) + ' · changer' : '🎽 Changer de groupe'}</button>` : ''}</div>
-      <div class="muted" style="font-weight:700">🏃 ${nbAtt(n,'s')} sprint(s) de ${fmt(S.settings.timeS)} s · 🏀 ${nbAtt(n,'b')} tir(s) basket · 1 point par plot atteint${off?` · ${off} absent(s)/inapte(s) masqué(s)`:''}</div></div>
+      <div class="muted" style="font-weight:700">🏃 ${nbAtt(n,'s')} sprint(s) de ${fmt(S.settings.timeS)} s · 🏀 ${nbAtt(n,'b')} lancer(s) · 1 point par plot atteint${off?` · ${off} absent(s)/inapte(s) masqué(s)`:''}</div></div>
     <div class="tiles">${list.map(s => saisieTile(n, s)).join('') || '<p>Aucun élève dans ce groupe.</p>'}</div>`;
 }
 function tileTarget(n, sid, a){
@@ -558,7 +558,7 @@ function bindEntry(){
         const was = vals(perf(n, sid, a)).length >= nbAtt(n, a);
         const old = res(n, sid)?.[key]?.[k] ?? null;
         setRes(n, sid, r => { r[key][k] = cur; if (old != null && !isProfRole()) r.mod = (r.mod || 0) + 1; });
-        if (was !== (vals(perf(n, sid, a)).length >= nbAtt(n, a))) render();      // toutes les courses / tous les tirs saisis : critères du pilier disponibles
+        if (was !== (vals(perf(n, sid, a)).length >= nbAtt(n, a))) render();      // toutes les courses / tous les lancers saisis : critères du pilier disponibles
         flagSaved(); } };
     svg.addEventListener('pointerup', end); svg.addEventListener('pointercancel', end);
   });
@@ -584,7 +584,7 @@ const DEFAULT_THEMES = [                 // « Piliers » (k:'t' = trajectoire �
 const THEMES_V = 3;                      // v3 : piliers (remplacent les anciens thèmes)
 /* Angle d'envol : 4 trajectoires (de maîtrise insuffisante à très bonne maîtrise) */
 const TRAJ = [null,
-  { n:'Tir tendu vers le sol', d:'M8 14 L104 58', arrow:true },
+  { n:'Lancer tendu vers le sol', d:'M8 14 L104 58', arrow:true },
   { n:'Cloche haute et courte', d:'M14 62 Q50 -30 86 62' },
   { n:'Arc tendu', d:'M8 50 Q60 6 112 50' },
   { n:'Grande cloche', d:'M8 62 Q56 -16 112 46' }];
@@ -647,13 +647,13 @@ function obsBilan(sid){
     <div class="pj-table-wrap"><table class="pj-table"><tr><th>Critère</th>${ls.map(x => `<th class="c">L${x.n}</th>`).join('')}</tr>
     ${th.cr.map((c, i) => `<tr><td><b>${esc(c)}</b></td>${ls.map(x => `<td class="c">${x.at ? `<span class="tag ${x.at==='abs'?'abs':'inapte'}">${x.at==='abs'?'Abs.':'Inapte'}</span>` : obsChip(x.ob?.[i], th)}</td>`).join('')}</tr>`).join('')}</table></div></div>`).join('');
 }
-/* Bloc de la fiche de saisie : à observer pendant les courses / tirs, puis Toujours / Souvent / Parfois / Jamais (ou trajectoire) */
+/* Bloc de la fiche de saisie : à observer pendant les courses / lancers, puis Toujours / Souvent / Parfois / Jamais (ou trajectoire) */
 function obsBlock(n, sid, a){
   const th = lessonPil(n, a); if (!th || !th.cr.length) return '';
   const nb = nbAtt(n, a), done = vals(perf(n, sid, a)).length >= nb, ob = res(n, sid)?.[obKey(a)] || [];
   if (!done) return `<section class="obs-sec"><h2>👀 ${ACT[a].ico} ${esc(th.n)} · à observer pendant les ${ACT[a].word}s</h2>
     <div class="obs-todo">${isTraj(th) ? [1,2,3,4].map(v => `<span class="obs-traj">${trajSVG(v, 70)}</span>`).join('') : th.cr.map(c => `<span>${esc(c)}</span>`).join('')}</div>
-    <div class="muted" style="font-weight:700">Les critères se remplissent après ${a==='s'?'la dernière course':'le dernier tir'}.</div></section>`;
+    <div class="muted" style="font-weight:700">Les critères se remplissent après ${a==='s'?'la dernière course':'le dernier lancer'}.</div></section>`;
   if (isTraj(th)) return `<section class="obs-sec on"><h2>👀 ${ACT[a].ico} ${esc(th.n)} · quelle trajectoire de balle ?</h2>
     <div class="traj-btns">${[1,2,3,4].map(v => `<button class="trbtn ${ob[0]===v?'on':''}" style="--cc:${OBS[v].c}" data-action="obs" data-a="${a}" data-i="0" data-v="${v}">${trajSVG(v, 150)}<span>${TRAJ[v].n}</span></button>`).join('')}</div></section>`;
   return `<section class="obs-sec on"><h2>👀 ${ACT[a].ico} ${esc(th.n)} · ce que l'observateur a vu</h2>
@@ -801,7 +801,7 @@ function painModal(){
 
 /* ---------- Classe « Test » : données inventées pour essayer l'appli (cycle de 7 leçons, leçon du jour : 3) ---------- */
 /* ---------- Classes de démonstration : « Formateurs » (leçon 4) et « Complet » (cycle de 12 leçons terminé) ---------- */
-const TEST_V = 7;                                    // version des scénarios de démonstration
+const TEST_V = 8;                                    // version des scénarios de démonstration
 const DEMO_ROSTER = [['L','Estelle'],['L','Jean Baptiste'],['B','Damien'],['R','Mathieu'],['P','Julie'],['T','Rémy'],['R','Estelle'],['M','Davy'],['D','Benoit'],['P','Christophe'],
   ['R','Grégory'],['M','Pierre'],['D','Yohann'],['L','Fabienne'],['B','Emilie'],['D','Anne Laure'],['G','Romain'],['D','Jovany'],['J','Emilie'],['G','Simon'],
   ['L','Solène'],['R','Paul Vincent'],['L','Caroline'],['L','Thibault'],['M','Romain'],['A','Jean Philippe'],['G','Jérôme'],['C','Nicolas'],['G','Guillaume'],['P','Sophie'],
@@ -847,13 +847,17 @@ function demoModel(n, sid, M, last){
     if (th) r[obKey(a)] = th.cr.map((_, i) => Math.max(1, Math.min(4, 2 + Math.floor((n + i) / 5)))); });
   S.results[n] = S.results[n] || {}; S.results[n][sid] = r;
 }
-/* « Formateurs » : 39 élèves, 2 groupes, 7 leçons ; leçon du jour : L4 Bats Tes Perfs !!! (L1 à L3 saisies, aucun absent) */
+/* « Formateurs » : 39 élèves, 2 groupes, 7 leçons ; leçon du jour : L4 Bats Tes Perfs !!! (L1 à L3 saisies ; Davy et Solène L. absents en L3) */
 function makeFormateurs(){
-  demoClass('Formateurs', ['Classe Test'], DEMO_ROSTER, 7, 3, {
+  demoClass('Formateurs', ['Classe Test'], DEMO_ROSTER, 7, 4, {
     1:['diag',null,null,'none'], 2:['manuel','reag','posl','diag'], 3:['manuel','drt','pous','diag'], 4:['inter',null,null,'diag'],
     5:['manuel','bras','angl','inter'], 6:['manuel','?','?','inter'], 7:['finale',null,null,'projet'] });
+  const L3 = lesson(3);
   S.students.forEach(s => { const P = demoProfile(true);
-    for (let n = 1; n <= 2; n++) { demoResult(n, s.id, P, 3); const r = S.results[n][s.id]; r.c = Array.from({length:6}, () => DEMO_RND(4, 5)); r.b = Array.from({length:6}, () => DEMO_RND(4, 5)); } });
+    for (let n = 1; n <= 2; n++) { demoResult(n, s.id, P, 4); const r = S.results[n][s.id]; r.c = Array.from({length:6}, () => DEMO_RND(4, 5)); r.b = Array.from({length:6}, () => DEMO_RND(4, 5)); delete r.mod; }
+    if ((s.nom === 'M' && s.prenom === 'Davy') || (s.nom === 'L' && s.prenom === 'Solène')) { L3.att[s.id] = 'abs'; return; }   // absents en L3
+    demoResult(3, s.id, P, 4); const r = S.results[3][s.id]; r.c = Array.from({length:6}, () => DEMO_RND(4, 6)); r.b = Array.from({length:6}, () => DEMO_RND(4, 6)); });
+  [1, 2, 3].forEach(n => { const L = lesson(n); if (L.wb) Object.keys(L.wb).forEach(id => { if (L.att[id]) delete L.wb[id]; }); });
   save();
 }
 /* « Complet » : 20 élèves, cycle de 12 leçons terminé, très peu d'absents / inaptes, projets du prudent au risqué */
@@ -957,7 +961,7 @@ function roleNote(n, sid){ const r = roleOf(n, sid); if (!ROLE_CR.every(c => r[c
 function btpCard(n, sid, entry){
   if (!isBTP(n)) return '';
   const s = btpNote(n, sid, 's'), b = btpNote(n, sid, 'b'), bonus = btpBonus(n, sid);
-  if (!s && !b) return entry ? `<section class="obs-sec btp-sec"><h2>🏁 Bats Tes Perfs : tes notes s'afficheront ici une fois tes courses et tes tirs saisis.</h2></section>` : '';
+  if (!s && !b) return entry ? `<section class="obs-sec btp-sec"><h2>🏁 Bats Tes Perfs : tes notes s'afficheront ici une fois tes courses et tes lancers saisis.</h2></section>` : '';
   const box = (a, r) => `<div class="note-box"><div class="nb-h">${ACT[a].ico} ${a==='s'?'Sprint':'Lancer'}</div>
     ${r ? `<div class="nb-v">${fmtN(r.note)}<small>/5</small></div><div class="nb-d">Moyenne ${fmt(r.moy)} · cible ${pts(r.t)} · écart ${r.ec >= 0 ? '+' : ''}${fmt(r.ec)}${r.done ? '' : ' · en cours'}</div>` : '<div class="muted">à saisir</div>'}</div>`;
   const nxt = a => { const v = vals(perf(n, sid, a)); return v.length ? clampT(a, Math.max(...v)) : null; };
@@ -1029,7 +1033,7 @@ function profBilanL(){
       <div class="lesson-picker">${Array.from({length:N},(_,i)=>i+1).map(k=>`<button class="lp ${k===n?'on':''}" data-action="bilN" data-n="${k}">${k}</button>`).join('')}</div>
       <div class="muted" style="font-weight:800;margin-top:4px">L${n} · ${esc(lessonTitle(n) || '')}${off.length ? ` · ${off.length} absent(s)/inapte(s) : ${off.map(x => esc(nameOf(x.s.id))).join(', ')}` : ''}</div></div>
     <div class="bl-grid">${grp('prog', '📈 Ils progressent', 'good', 'Moyenne en hausse d\'au moins 0,5 pt par rapport à la leçon précédente, ou au-dessus de la cible.')}
-      ${grp('inv', '⚠️ Manque d\'investissement', 'warn', 'Toutes les courses ou tous les tirs prévus n\'ont pas été faits.')}
+      ${grp('inv', '⚠️ Manque d\'investissement', 'warn', 'Toutes les courses ou tous les lancers prévus n\'ont pas été faits.')}
       ${grp('enc', '💬 À encourager', 'enc', 'En baisse, loin de la cible (1,5 pt et plus) ou douleur signalée.')}</div>`;
 }
 function profRecap(){
@@ -1092,16 +1096,16 @@ function viewProjetDetail(){
   const choose = a => { const g = suggest(sid, a), cur = D[a==='s'?'cibleS':'cibleB'];
     const reco = painToday.length ? 'prudente' : 'conseillee';
     const opt = (k, lbl) => g ? `<button class="pj-opt ${cur===g[k]?'on':''} ${reco===k?'reco':''}" data-action="pjSet" data-a="${a}" data-v="${g[k]}"><small>${lbl}${reco===k?' · conseil':''}</small><b>${pts(g[k])}</b><small>${esc(ACT[a].unit(g[k]))}</small></button>` : '';
-    return `<div class="pj-choice"><h3>${ACT[a].ico} Ma cible ${a==='s'?'en sprint':'au tir'}</h3>
+    return `<div class="pj-choice"><h3>${ACT[a].ico} Ma cible ${a==='s'?'en sprint':'au lancer'}</h3>
       <div class="pj-opts">${opt('prudente','Prudente')}${opt('conseillee','Conseillée')}${opt('ambitieuse','Ambitieuse')}</div>
       <div class="row" style="margin-top:6px"><div class="stepper"><button data-action="pjStep" data-a="${a}" data-d="-1">−</button><span class="val" style="min-width:170px">${cur!=null?plotShort(a, cur):'—'}</span><button data-action="pjStep" data-a="${a}" data-d="1">+</button></div></div></div>`; };
   return `<div class="entry-name">${band(sid)}<div class="who">${esc(nameOf(sid))}</div><span class="muted" style="font-weight:800">Projet · évaluation finale (L${F})</span>
       <button class="btn" data-action="go" data-view="projet" style="margin-left:auto">← Retour aux élèves</button></div>
     ${!rows && !isProfRole() ? '' : `<div class="card strong compact"><h2>📋 Mon bilan, leçon par leçon</h2>
-      <div class="pj-table-wrap"><table class="pj-table"><tr><th>Leçon</th><th>🏃 Sprint</th><th>🏀 Tir</th><th class="c">🧶 Fil rouge</th></tr>${rows || '<tr><td colspan="4" class="muted">Pas encore de données</td></tr>'}</table></div></div>`}
+      <div class="pj-table-wrap"><table class="pj-table"><tr><th>Leçon</th><th>🏃 Sprint</th><th>🏀 Lancer</th><th class="c">🧶 Fil rouge</th></tr>${rows || '<tr><td colspan="4" class="muted">Pas encore de données</td></tr>'}</table></div></div>`}
     ${obsBilan(sid) ? `<div class="card strong compact"><h2>👀 Mes critères observés</h2>${obsBilan(sid)}</div>` : ''}
     <div class="card strong compact"><h2>🔎 En résumé</h2>
-      <div><b>🏃 Sprint</b> ${sum('s')}</div><div style="margin-top:6px"><b>🏀 Tir</b> ${sum('b')}</div></div>
+      <div><b>🏃 Sprint</b> ${sum('s')}</div><div style="margin-top:6px"><b>🏀 Lancer</b> ${sum('b')}</div></div>
     ${notesBlock(sid)}
     <div class="card strong compact">${speBlock(sid, true)}</div>
     <div class="card strong compact">${painToday.length ? `<div class="advice">🩹 Douleur signalée aujourd'hui (${esc(painToday.map(zoneName).join(', '))}) : la cible <b>prudente</b> est conseillée.</div>` : ''}<div class="pj-choices">${choose('s')}${choose('b')}</div>
@@ -1174,7 +1178,7 @@ function viewStatsDetail(){
 
 /* ---------------------------------------------------------------------
    Fiches élèves en PDF : la fiche Statistiques mise en page sur 2 pages A4 paysage
-   (recto : bilan · verso : sprint et tir leçon par leçon, douleurs).
+   (recto : bilan · verso : sprint et lancer leçon par leçon, douleurs).
    L'appli prépare les pages puis ouvre l'impression → « Enregistrer en PDF ».
    --------------------------------------------------------------------- */
 function fichePages(sid){
@@ -1385,7 +1389,7 @@ function viewHomeEleve(){
     ${has ? `<div class="class-chips"><span class="class-chip on">🏫 ${esc(className())}</span></div>
       <div class="home-lesson"><div class="big">Leçon ${n} / ${S.settings.nbLessons}</div>
         <div style="font-size:20px;font-weight:800">${esc(lessonTitle(n) || 'Sans titre')}</div>
-        <div class="muted" style="font-weight:700">🏃 ${nbAtt(n,'s')} sprint(s) de ${fmt(S.settings.timeS)} s · 🏀 ${nbAtt(n,'b')} tir(s) · ${pres}/${S.students.length} présent(s)</div>
+        <div class="muted" style="font-weight:700">🏃 ${nbAtt(n,'s')} sprint(s) de ${fmt(S.settings.timeS)} s · 🏀 ${nbAtt(n,'b')} lancer(s) · ${pres}/${S.students.length} présent(s)</div>
         <div class="muted" style="font-size:14px">Leçon scannée le ${new Date(ROOT.seance.at).toLocaleDateString('fr-FR')} à ${new Date(ROOT.seance.at).toLocaleTimeString('fr-FR',{hour:'2-digit',minute:'2-digit'})}</div></div>`
       : `<div class="home-lesson"><div class="big">Aucune leçon</div><div style="font-weight:800">Scanne le QR de la leçon affiché par ton enseignant.</div></div>`}
     <div class="home-grid row4">
@@ -1556,7 +1560,7 @@ function profCycle(){
   let rows = '';
   for (let n = 1; n <= N; n++) {
     const L = lesson(n);
-    const attF = a => rangeField(`${ACT[a].ico} ${a==='s'?'Sprints':'Tirs'}`, nbAtt(n, a), `data-field="att" data-n="${n}" data-a="${a}"`, 0, 10,
+    const attF = a => rangeField(`${ACT[a].ico} ${a==='s'?'Sprints':'Lancers'}`, nbAtt(n, a), `data-field="att" data-n="${n}" data-a="${a}"`, 0, 10,
         isOverride(n, a) ? ` <button class="btn small ghost xs" data-action="attReset" data-n="${n}" data-a="${a}">Réinitialiser</button>` : '');
     rows += `<div class="lrow"><div class="lesson-num ${n===cur?'cur':''}">${n}</div><div class="lrow-main">
       <div class="lrow-top"><div class="kind-box">${kindSelect(n)}${kindOf(n)==='manuel'?`<input type="text" data-field="title" data-n="${n}" value="${esc(L.title)}" placeholder="Titre de la leçon (facultatif)">`:''}</div>${sourceSelect(n)}</div>
@@ -1567,7 +1571,7 @@ function profCycle(){
       <div class="cgrid">
         <div class="rf"><div class="rf-h"><span class="rf-l">📅 Nb leçons</span></div>${stepper('nbLessons','',N)}</div>
         ${rangeField(`🏃 Sprints / leçon`, st.baseCourses, 'data-field="set" data-k="baseCourses"', 1, 10)}
-        ${rangeField('🏀 Tirs / leçon', st.baseTirs, 'data-field="set" data-k="baseTirs"', 1, 10)}
+        ${rangeField('🏀 Lancers / leçon', st.baseTirs, 'data-field="set" data-k="baseTirs"', 1, 10)}
       </div>
       <h3>🏃 Course <span class="muted">· ${st.plotsS} plots · ${fmt(spdS(1))} → ${fmt(spdS(st.plotsS))} km/h</span></h3>
       <div class="cgrid">
@@ -1810,8 +1814,8 @@ function exportXlsx(){
   const num = v => v == null ? '' : v;
   const r2 = v => v == null ? '' : Math.round(v*100)/100;
   const head = ['Nom', 'Prénom', 'Affiché', 'Groupe'];
-  for (let n = 1; n <= N; n++) head.push(`L${n} sprint cible`, `L${n} sprint moy.`, `L${n} basket cible`, `L${n} basket moy.`);
-  head.push('Projet : cible sprint', 'Projet : cible basket', 'Projet : texte', 'Spé', 'Note sprint /6', 'Note lancer /6', 'Total /12', 'Fil rouge proposé', 'Fil rouge final');
+  for (let n = 1; n <= N; n++) head.push(`L${n} sprint cible`, `L${n} sprint moy.`, `L${n} lancer cible`, `L${n} lancer moy.`);
+  head.push('Projet : cible sprint', 'Projet : cible lancer', 'Projet : texte', 'Spé', 'Note sprint /6', 'Note lancer /6', 'Total /12', 'Fil rouge proposé', 'Fil rouge final');
   const syn = [head];
   let maxA = 0; for (let n = 1; n <= N; n++) maxA = Math.max(maxA, nbAtt(n,'s'), nbAtt(n,'b'));
   const det = [['Nom','Prénom','Leçon','Titre','Statut','Épreuve','Cible (points)','Cible (plot)',
@@ -1888,8 +1892,8 @@ function exportXlsx(){
     XLSX.utils.book_append_sheet(wb, w5, 'Résultats évaluations');
   }
   const lessons = []; for (let n = 1; n <= N; n++) lessons.push([n, lessonTitle(n), ['s','b'].map(a => lessonPil(n, a) ? `${ACT[a].ico} ${lessonPil(n, a).n} : ${lessonPil(n, a).cr.join(' · ')}` : '').filter(Boolean).join(' | '), nbAtt(n,'s'), nbAtt(n,'b'), hasSource(n) ? `Résultats L${lesson(n).source} (${lesson(n).calc==='avg'?'moyenne':'meilleur'})` : (n===1?'À la main':'Reprise leçon précédente')]);
-  XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet([['Leçon','Titre / pilier','Critères','Sprints','Tirs basket','Cibles de base'], ...lessons]), 'Leçons');
-  const plots = [['Plot / points','Sprint : vitesse (km/h)',`Sprint : distance en ${S.settings.timeS} s (m)`,'Basket : distance (m)']];
+  XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet([['Leçon','Titre / pilier','Critères','Sprints','Lancers','Cibles de base'], ...lessons]), 'Leçons');
+  const plots = [['Plot / points','Sprint : vitesse (km/h)',`Sprint : distance en ${S.settings.timeS} s (m)`,'Lancer : distance (m)']];
   for (let k = 1; k <= Math.max(maxPlots('s'), maxPlots('b')); k++)
     plots.push([k, k<=maxPlots('s')?spdS(k):'', k<=maxPlots('s')?Math.round(distS(k)*100)/100:'', k<=maxPlots('b')?distB(k):'']);
   XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet(plots), 'Plots');
@@ -2048,7 +2052,7 @@ function binSeance(n){
   w.u16(N.length); N.forEach(x => w.u8(x)); w.u16(L.length); L.forEach(x => w.u8(x));
   w.u8(withSum ? 1 : 0);
   if (withSum) list.forEach(s => sumBytes(w, s.id));
-  /* v2 : historique complet des leçons précédentes (chaque course, chaque tir, piliers, fil rouge, forme) */
+  /* v2 : historique complet des leçons précédentes (chaque course, chaque lancer, piliers, fil rouge, forme) */
   const arr = a => { a = a || []; w.u8(a.length); a.forEach(v => w.u8(nv(v))); };
   w.u8(cur - 1);
   for (let k = 1; k < cur; k++) {
@@ -2647,7 +2651,7 @@ const A = {
   testClass: async () => {
     const F = Object.values(ROOT.classes).find(c => ['Formateurs','Classe Test'].includes(c.settings.className)), C = Object.values(ROOT.classes).find(c => c.settings.className === 'Complet');
     const ch = await choiceBox('🧪 Classes de démonstration',
-      '<b>Formateurs</b> : 39 élèves (groupe rouge / groupe bleu), 7 leçons, leçon du jour : L3 (L1 et L2 saisies, perfs de 4 à 5).<br><b>Complet</b> : 20 élèves, cycle de 12 leçons terminé (projets, spé et notes de l\'évaluation finale).',
+      '<b>Formateurs</b> : 39 élèves (groupe rouge / groupe bleu), 7 leçons, leçon du jour : L4 Bats Tes Perfs (L1 et L2 de 4 à 5, L3 de 4 à 6 ; Davy et Solène L. absents en L3).<br><b>Complet</b> : 20 élèves, cycle de 12 leçons terminé (projets, spé et notes de l\'évaluation finale).',
       [...(F ? [{label:'Ouvrir Formateurs', value:'F', cls:'primary'}, {label:'Régénérer Formateurs', value:'Fn', cls:'orange'}] : [{label:'Créer Formateurs', value:'Fn', cls:'primary'}]),
        ...(C ? [{label:'Ouvrir Complet', value:'C', cls:'primary'}, {label:'Régénérer Complet', value:'Cn', cls:'orange'}] : [{label:'Créer Complet', value:'Cn', cls:'primary'}])]);
     if (!ch) return;
@@ -2754,7 +2758,7 @@ const A = {
   printFiche: d => printFiches([d.sid]),
   backup: () => downloadJSON(ROOT, `Biathlon_sauvegarde_${new Date().toISOString().slice(0,10)}.json`),
   setPin: () => { const v = $('#new-pin').value.trim(); if (!/^\d{4}$/.test(v)) return toast('4 chiffres requis'); ROOT.pin = v; save(); $('#new-pin').value=''; toast('✓ Code modifié'); },
-  clearResults: async () => { if (await confirmBox('Effacer tous les résultats ?', 'Performances, tirs et projets seront supprimés (la liste et les leçons restent).', 'Effacer', true)) { S.results = {}; S.projects = {}; save(); render(); } },
+  clearResults: async () => { if (await confirmBox('Effacer tous les résultats ?', 'Performances, lancers et projets seront supprimés (la liste et les leçons restent).', 'Effacer', true)) { S.results = {}; S.projects = {}; save(); render(); } },
   resetAll: async () => { if (await confirmBox('Effacer « ' + className() + ' » ?', 'Élèves, leçons et résultats de cette classe repartent à zéro.', 'Tout effacer', true)) {
     const c = newClassState(className(), S.id); ROOT.classes[S.id] = c; useClass(c.id); save(); go('home'); } },
 };
