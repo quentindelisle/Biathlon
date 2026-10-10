@@ -689,3 +689,13 @@ table.recap th.r-name{text-align:left}
   background:#fff;border:6px solid var(--orange);box-shadow:0 18px 60px #0A163366;font-size:28px;font-weight:900;line-height:1.3;text-align:center;color:var(--ink);animation:lrIn .3s ease-out}
 .big-adv.warn{border-color:var(--red);background:#FFF1F0}
 .big-adv.info{border-color:var(--orange);background:#FFF6EC}
+/* v8.9.1 — un passage à la fois (mode à chaque passage) */
+.pass-sum{display:flex;flex-wrap:wrap;align-items:center;gap:6px;margin:0 0 8px}
+.pass-chip{display:flex;flex-direction:column;align-items:center;min-width:46px;padding:3px 6px;border:3px solid #C9D3E3;border-radius:10px;background:#fff;color:var(--ink);cursor:pointer;line-height:1.1}
+.pass-chip small{font-size:12px;font-weight:800;color:#5B6478}
+.pass-chip b{font-size:18px}
+.pass-chip.done{border-color:var(--green);background:#EAF7E4}
+.pass-chip.cur{border-color:var(--orange);box-shadow:0 0 0 3px #F59A1B55}
+.pass-ok{font-weight:900;color:var(--green);font-size:18px;margin-left:6px}
+.dials.one{grid-template-columns:minmax(0,340px)!important;justify-content:center}
+.pass-next{margin-top:8px;width:100%}

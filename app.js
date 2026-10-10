@@ -10,7 +10,7 @@
    ===================================================================== */
 'use strict';
 
-const APP_VERSION = '8.9.0';
+const APP_VERSION = '8.9.1';
 const STORE_KEY = 'neps_biathlon5s_v2';
 const QR_CHUNK = 440;           // caractères base45 par QR (QR version 11 max : facile à lire par une caméra)
 
@@ -355,7 +355,7 @@ function setTop(main, sub, right=''){
   $('#tb-main').textContent = main; $('#tb-sub').textContent = '🏫 ' + className() + (sub ? ' · ' + sub : ''); $('#tb-right').innerHTML = right;
 }
 function lessonLabel(n){ const t = lessonTitle(n); return `Leçon ${n}/${S.settings.nbLessons}` + (t ? ' · ' + t : ''); }
-function go(view, opts={}){ Object.assign(UI, opts); UI.view = view; render(); window.scrollTo(0,0); }
+function go(view, opts={}){ if (view === 'entry') UI.pass = null; Object.assign(UI, opts); UI.view = view; render(); window.scrollTo(0,0); }
 
 function render(){
   stopScan();
@@ -485,16 +485,27 @@ function viewEntry(){
   ['s','b'].forEach(a => {
     const A_ = ACT[a], nb = nbAtt(n, a), p = perf(n, sid, a), t = targetInfo(n, sid, a).value, mx = maxPlots(a);
     if (!nb) return;
-    const W = A_.word[0].toUpperCase() + A_.word.slice(1);
+    const W = A_.word[0].toUpperCase() + A_.word.slice(1), one = obsMode(n) === 'p';
+    /* mode « à chaque passage » : un seul passage proposé (le premier non saisi, fixé à l'ouverture de la fiche) */
+    let ks = Array.from({length: nb}, (_, k) => k), sum = '';
+    if (one) {
+      UI.pass = UI.pass && UI.pass.sid === sid && UI.pass.n === n ? UI.pass : { sid, n };
+      if (UI.pass[a] == null) { const f = Array.from({length: nb}, (_, k) => k).find(k => p[k] == null); UI.pass[a] = f == null ? -1 : f; }
+      ks = UI.pass[a] >= 0 ? [UI.pass[a]] : [];
+      sum = `<div class="pass-sum">${Array.from({length: nb}, (_, k) => `<button class="pass-chip ${k === UI.pass[a] ? 'cur' : ''} ${p[k] != null ? 'done' : ''}" data-action="passGo" data-a="${a}" data-k="${k}"><small>n°${k+1}</small><b>${p[k] ?? '–'}</b></button>`).join('')}
+        ${UI.pass[a] < 0 ? `<span class="pass-ok">✓ ${nb} ${A_.word}${nb>1?'s':''} faite${nb>1?'s':''}</span>` : ''}</div>`;
+    }
     h += `<section class="entry-sec sec-${a}"><div class="sec-main">
-      <h2>${A_.ico} ${A_.label} · ${nb} ${A_.word}${nb>1?'s':''}</h2>
-      <div class="dials">`;
-    for (let k = 0; k < nb; k++) {
+      <h2>${A_.ico} ${A_.label} · ${nb} ${A_.word}${nb>1?'s':''}</h2>${sum}
+      <div class="dials ${one ? 'one' : ''}">`;
+    for (const k of ks) {
+      const nxt = one && p[k] != null ? (Array.from({length: nb}, (_, j) => j).find(j => j > k && p[j] == null) ?? Array.from({length: nb}, (_, j) => j).find(j => p[j] == null)) : null;
       h += `<div class="dial-card dial-${a}"><h3><span class="big-ico">${A_.ico}</span> ${W} ${k+1}</h3>
         <svg class="dial${mx>12?' big':''}" viewBox="0 0 200 200" data-a="${a}" data-k="${k}">${dialInner(p[k], mx, t, a)}</svg>
         ${t!=null?`<div class="dial-tgt">🎯 cible ${pts(t)}</div>`:''}
         ${dialLocked(sid, a, k, p[k]) ? `<button class="btn small" data-action="dialUnlock" data-a="${a}" data-k="${k}">✏️ Modifier</button>`
-          : `<button class="btn small ghost" data-action="dialClear" data-a="${a}" data-k="${k}">Effacer</button>`}${pvBlock(n, sid, a, k)}</div>`;
+          : `<button class="btn small ghost" data-action="dialClear" data-a="${a}" data-k="${k}">Effacer</button>`}${pvBlock(n, sid, a, k)}
+        ${nxt != null ? `<button class="btn primary pass-next" data-action="passGo" data-a="${a}" data-k="${nxt}">${W} ${nxt+1} →</button>` : ''}</div>`;
     }
     h += `</div></div></section>`;
     h += obsBlock(n, sid, a);
@@ -565,8 +576,8 @@ function bindEntry(){
             else if (d > 180e3) adv = [`⏱️ Attention à l'autonomie ! N'oublie pas que tu dois faire ${nb} course${nb > 1 ? 's' : ''} aujourd'hui.`, 'info']; } }
         setRes(n, sid, r => { r[key][k] = cur; if (old != null && !isProfRole()) r.mod = (r.mod || 0) + 1;
           if (a === 's' && old == null) { r.tc = r.tc || []; r.tc[k] = now(); } });
-        if (adv) bigAdvice(adv[0], adv[1]);
-        if (was !== (vals(perf(n, sid, a)).length >= nbAtt(n, a))) render();      // toutes les courses / tous les lancers saisis : critères du pilier disponibles
+        if (was !== (vals(perf(n, sid, a)).length >= nbAtt(n, a)) || (old == null && obsMode(n) === 'p')) { const y = window.scrollY; render(); window.scrollTo(0, y); }
+        if (adv) bigAdvice(adv[0], adv[1]);      // toutes les courses / tous les lancers saisis : critères du pilier disponibles
         flagSaved(); } };
     svg.addEventListener('pointerup', end); svg.addEventListener('pointercancel', end);
   });
@@ -2686,6 +2697,7 @@ const A = {
   well: d => { const n = curLesson(), sid = UI.sid, v = +d.v; setRes(n, sid, r => { r[d.f] = r[d.f] === v ? null : v; }); render(); flagSaved(); },
   painOpen: () => painModal(),
   appelWell: d => appelWellModal(d.sid),
+  passGo: d => { const a = d.a === 'b' ? 'b' : 's'; UI.pass = UI.pass || { sid: UI.sid, n: curLesson() }; UI.pass[a] = +d.k; const y = window.scrollY; render(); window.scrollTo(0, y); },
   pv: d => { const n = curLesson(), a = d.a === 'b' ? 'b' : 's', th = lessonPil(n, a); if (!th) return; const k = +d.k, i = +d.i, v = +d.v, K = obKey(a);
     setRes(n, UI.sid, r => { r.pv = r.pv || {}; r.pv[a] = r.pv[a] || []; const row = Array.from({length: th.cr.length}, (_, j) => (r.pv[a][k] || [])[j] ?? null);
       row[i] = row[i] === v ? null : v; r.pv[a][k] = row; const ag = pvAgg(th, r.pv[a]); if (ag) r[K] = ag; else delete r[K]; });
