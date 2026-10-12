@@ -10,7 +10,7 @@
    ===================================================================== */
 'use strict';
 
-const APP_VERSION = '8.9.1';
+const APP_VERSION = '8.9.2';
 const STORE_KEY = 'neps_biathlon5s_v2';
 const QR_CHUNK = 440;           // caractères base45 par QR (QR version 11 max : facile à lire par une caméra)
 
@@ -974,9 +974,9 @@ function notesBlock(sid){
 }
 /* ---------------------------------------------------------------------
    💪 Bats Tes Perfs !!! 🚀 (évaluation intermédiaire)
-   Écart = moyenne des tentatives − cible (cible de la leçon 1). Note /5 :
-   sprint : −1 et moins → 2 · −0,5 → 2,5 · 0 → 3 · +0,5 → 3,5 · +1 → 4 · +1,5 → 4,5 · +2 et plus → 5
-   lancer : −1,5 et moins → 2 · −1 → 2,5 · −0,5 → 3 · 0 → 3,5 · +0,5 → 4 · +1 → 4,5 · +1,5 et plus → 5
+   Écart = meilleure perf − cible de la leçon (L1 par défaut, ou cible modifiée à la main). Note /5 :
+   sprint : −1 et moins → 2 · 0 → 3 · +1 → 4 · +2 et plus → 5
+   lancer : −2 et moins → 2 · −1 → 2,5 · 0 → 3,5 · +1 → 4,5 · +2 et plus → 5
    Super bonus : 5/5 supplémentaire si au moins 4,5 en sprint ET en lancer.
    Rôle (évaluation de l'enseignant) : Placement, Fiabilité, Lisibilité, chacun /2 → /6.
    --------------------------------------------------------------------- */
@@ -985,9 +985,9 @@ function btpNote(n, sid, a){
   if (!isBTP(n) || attOf(n, sid)) return null;
   const v = vals(perf(n, sid, a)), t = targetInfo(n, sid, a).value;
   if (!v.length || t == null) return null;
-  const ec = Math.round((avg(v) - t) * 100) / 100;
+  const best = Math.max(...v), ec = best - t;
   const note = Math.max(2, Math.min(5, (a === 's' ? 3 : 3.5) + Math.floor(ec * 2 + 1e-9) / 2));
-  return { note, ec, t, moy: avg(v), done: v.length >= nbAtt(n, a) };
+  return { note, ec, t, best, moy: avg(v), done: v.length >= nbAtt(n, a) };
 }
 function btpBonus(n, sid){ const s = btpNote(n, sid, 's'), b = btpNote(n, sid, 'b'); return s && b ? (s.note >= 4.5 && b.note >= 4.5) : null; }
 const btpLessons = () => { const l = []; for (let n = 1; n <= S.settings.nbLessons; n++) if (isBTP(n)) l.push(n); return l; };
@@ -1016,7 +1016,7 @@ function btpCard(n, sid, entry){
   const s = btpNote(n, sid, 's'), b = btpNote(n, sid, 'b'), bonus = btpBonus(n, sid);
   if (!s && !b) return entry ? `<section class="obs-sec btp-sec"><h2>🏁 Bats Tes Perfs : tes notes s'afficheront ici une fois tes courses et tes lancers saisis.</h2></section>` : '';
   const box = (a, r) => `<div class="note-box"><div class="nb-h">${ACT[a].ico} ${a==='s'?'Sprint':'Lancer'}</div>
-    ${r ? `<div class="nb-v">${fmtN(r.note)}<small>/5</small></div><div class="nb-d">Moyenne ${fmt(r.moy)} · cible ${pts(r.t)} · écart ${r.ec >= 0 ? '+' : ''}${fmt(r.ec)}${r.done ? '' : ' · en cours'}</div>` : '<div class="muted">à saisir</div>'}</div>`;
+    ${r ? `<div class="nb-v">${fmtN(r.note)}<small>/5</small></div><div class="nb-d">Meilleure perf ${pts(r.best)} · cible ${pts(r.t)} · écart ${r.ec >= 0 ? '+' : ''}${fmt(r.ec)}${r.done ? '' : ' · en cours'}</div>` : '<div class="muted">à saisir</div>'}</div>`;
   const nxt = a => { const v = vals(perf(n, sid, a)); return v.length ? clampT(a, Math.max(...v)) : null; };
   const ns = nxt('s'), nb = nxt('b'), rn = isProfRole() && n === roleLesson() ? roleNote(n, sid) : null;
   return `<section class="card strong btp-card"><h2>🏁 Mes notes · 💪 Bats Tes Perfs !!! 🚀 (L${n})</h2>
@@ -1649,9 +1649,9 @@ function sourceSelect(n, label=''){
   let opts = o('prev', n === 1 ? 'Choix manuel des cibles' : `Garder les cibles de la leçon ${n-1}`);
   if (kind === 'diag' || kind === 'inter') opts += o('none', 'Cibles à déterminer');
   if (lastKind('diag', n)) opts += o('diag', `Cibles de l'évaluation diagnostique (L${lastKind('diag', n)})`);
-  if (lastKind('inter', n)) opts += o('inter', `Cibles de « Bats Tes Perfs !!! » (L${lastKind('inter', n)})`);
+  if (lastKind('inter', n)) opts += o('inter', `Meilleure perf du dernier Bats Tes Perfs (L${lastKind('inter', n)})`);
   if (kind === 'finale') opts += o('projet', "Projet de l'élève");
-  opts += Array.from({length:n-1},(_,i)=>i+1).map(x => o(x, `Cibles = résultats de la leçon ${x} (${count(x)} él.)`)).join('');
+  opts += Array.from({length:n-1},(_,i)=>i+1).map(x => o(x, isBTP(x) ? `Meilleure perf de Bats Tes Perfs (L${x})` : `Cibles = résultats de la leçon ${x} (${count(x)} él.)`)).join('');
   const calc = '';                                  // cible = meilleur plot atteint (identique pour toute la leçon)
   return `<div class="src-sel">${label?`<label class="field grow">${label}`:'<label class="grow">'}<select data-field="source" data-n="${n}">${opts}</select></label>${calc}</div>`;
 }
