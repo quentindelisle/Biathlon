@@ -10,7 +10,7 @@
    ===================================================================== */
 'use strict';
 
-const APP_VERSION = '8.9.2';
+const APP_VERSION = '8.9.3';
 const STORE_KEY = 'neps_biathlon5s_v2';
 const QR_CHUNK = 440;           // caractères base45 par QR (QR version 11 max : facile à lire par une caméra)
 
@@ -1528,17 +1528,26 @@ function profSeanceQR(){
       <div class="advice info">Sur chaque tablette élève : <b>📷 Scanner la leçon</b>. Faites l'appel et vérifiez les cibles <b>avant</b> d'afficher ce QR.</div>
       <div id="qr-seance" class="center">Préparation…</div></div>`;
 }
-/* Élèves dont on attend encore des résultats pour la leçon du jour (🏃 et/ou 🏀 manquant) */
+/* Nombre de performances saisies / attendues pour une activité (ex. 🏃 4/6) */
+function cntBadge(n, sid, a){
+  const tot = nbAtt(n, a), done = Math.min(vals(perf(n, sid, a)).length, tot);
+  return `<span class="cnt ${done >= tot ? 'ok' : done ? 'part' : 'zero'}">${ACT[a].ico} ${done}/${tot}</span>`;
+}
+const actsOf = n => ['s','b'].filter(a => nbAtt(n, a) > 0);
+/* Élèves dont on attend encore des résultats pour la leçon du jour (🏃 et/ou 🏀 incomplet) */
 function waitList(){
-  const n = curLesson();
-  const miss = sortedStudents().filter(s => !attOf(n, s.id)).map(s => ({ s, m: ['s','b'].filter(a => nbAtt(n, a) > 0 && vals(perf(n, s.id, a)).length < nbAtt(n, a)) })).filter(x => x.m.length);
+  const n = curLesson(), acts = actsOf(n);
+  const miss = sortedStudents().filter(s => !attOf(n, s.id)).map(s => ({ s, m: acts.filter(a => vals(perf(n, s.id, a)).length < nbAtt(n, a)) })).filter(x => x.m.length);
   const pres = S.students.filter(s => !attOf(n, s.id)).length;
-  const ok = pres - miss.length, pc = pres ? Math.round(ok / pres * 100) : 0, LR = UI.lastRecv && now() - UI.lastRecv.ts < 8000 ? UI.lastRecv : null;
-  return `${LR ? `<div class="last-recv">📥 Reçu : ${LR.ids.map(id => { const m = miss.find(x => x.s.id === id);
-      return `<b>${esc(nameOf(id))}</b> ${m ? `<span class="lr-miss">il manque ${m.m.map(a => ACT[a].ico).join(' ')}</span>` : '<span class="lr-ok">✓ complet</span>'}`; }).join(' · ')}</div>` : ''}
+  const ok = pres - miss.length, pc = pres ? Math.round(ok / pres * 100) : 0;
+  const LR = UI.lastRecv && UI.lastRecv.cid === S.id && UI.lastRecv.n === n ? UI.lastRecv : null;   // reste affiché jusqu'au QR suivant
+  const lrRow = id => { const done = !miss.some(x => x.s.id === id);
+    return `<div class="lr-row">${band(id)}<span class="lr-n">${esc(nameOf(id))}</span>${acts.map(a => cntBadge(n, id, a)).join('')}${done ? '<span class="lr-ok">✓ complet</span>' : '<span class="lr-miss">incomplet</span>'}</div>`; };
+  return `${LR ? `<div class="last-recv ${now() - LR.ts < 1500 ? 'fresh' : ''}"><div class="lr-h">📥 Dernier QR reçu${LR.from ? ` · tablette ${esc(String(LR.from))}` : ''} · ${LR.ids.length} élève(s)</div>
+      ${LR.ids.length ? LR.ids.filter(id => student(id)).map(lrRow).join('') : `<div class="lr-row">Aucune saisie pour la leçon ${n}</div>`}</div>` : ''}
     <div class="recv-prog"><div class="rp-bar"><span style="width:${pc}%"></span></div><div class="rp-txt"><b>${ok} / ${pres}</b> reçus · ${pc} %</div></div>
     <h2>⏳ En attente de résultats <span class="muted">· ${miss.length}/${pres}</span></h2>
-    ${miss.length ? `<div class="wait-list">${miss.map(({ s, m }) => `<div class="wait-it">${band(s.id)}<span class="wn">${esc(nameOf(s.id))}</span><span class="wi">${m.map(a => ACT[a].ico).join(' ')}</span></div>`).join('')}</div>`
+    ${miss.length ? `<div class="wait-list">${miss.map(({ s }) => `<div class="wait-it">${band(s.id)}<span class="wn">${esc(nameOf(s.id))}</span><span class="wi">${acts.map(a => cntBadge(n, s.id, a)).join('')}</span></div>`).join('')}</div>`
       : '<div class="advice good">✓ Tous les résultats de la leçon sont arrivés.</div>'}`;
 }
 function profRecup(){
@@ -1563,7 +1572,7 @@ function afterProf(){
     if (area && UI.profTab === 'qr' && UI.view === 'prof') showQRSeries(chunkQR(payload, 'S', QR_CHUNK), area, `Leçon ${curLesson()} · ${esc(className())}`); })();
   if (UI.profTab === 'recup') startScan($('#scan-area'), ['R','F'], async p => { await applyPacket(p);
     const ids = p.k === 'res' ? Object.keys(p.results?.[curLesson()] || {}).filter(id => student(id)) : [];
-    if (ids.length) { UI.lastRecv = { ids, ts: now() }; clearTimeout(UI._lrT); UI._lrT = setTimeout(() => { const w = $('#wait-box'); if (w) w.innerHTML = waitList(); }, 8100); }
+    if (p.k === 'res') UI.lastRecv = { ids, ts: now(), n: curLesson(), cid: S.id, from: p.from };   // remplacé au QR suivant
     const w = $('#wait-box'); if (w) w.innerHTML = waitList(); return 'continue'; });
 }
 function profClasses(){

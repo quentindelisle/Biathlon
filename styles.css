@@ -699,3 +699,18 @@ table.recap th.r-name{text-align:left}
 .pass-ok{font-weight:900;color:var(--green);font-size:18px;margin-left:6px}
 .dials.one{grid-template-columns:minmax(0,340px)!important;justify-content:center}
 .pass-next{margin-top:8px;width:100%}
+/* v8.9.3 — récupération : nombre de perfs saisies (🏃 4/6) + dernier QR reçu persistant, un élève par ligne */
+.cnt{display:inline-block;padding:1px 6px;border-radius:8px;font-size:15px;font-weight:900;letter-spacing:0;white-space:nowrap;border:2px solid transparent}
+.cnt + .cnt{margin-left:4px}
+.cnt.ok{background:#E6F6DF;color:#2E7D17;border-color:#5FC23A}
+.cnt.part{background:#FFF1E0;color:#B5520A;border-color:#F0A35A}
+.cnt.zero{background:#FDE7E7;color:#B42318;border-color:#E88B8B}
+.wait-it .wi{letter-spacing:0}
+.last-recv{animation:none;font-size:20px}
+.last-recv.fresh{animation:lrIn .35s ease-out}
+.last-recv .lr-h{font-size:16px;font-weight:900;color:#2E7D17;margin-bottom:6px}
+.lr-row{position:relative;display:flex;align-items:center;flex-wrap:wrap;gap:6px;background:#fff;border:2px solid #BFE3B0;border-radius:10px;padding:4px 10px 4px 18px;margin-top:4px}
+.lr-row .band{position:absolute;left:0;top:0;bottom:0;width:8px;border-radius:8px 0 0 8px}
+.lr-row .lr-n{flex:1;min-width:120px}
+.lr-row .cnt{font-size:17px}
+.lr-row .lr-miss,.lr-row .lr-ok{font-size:16px}
